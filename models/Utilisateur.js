@@ -2,77 +2,79 @@ import { pool } from '../config/db.js';
 import Profile from '../models/Profile.js'; // ✅ Import du modèle Profile
 
 class User {  
-  /**
-   * Crée un nouvel utilisateur avec vérification de doublon + PROFIL AUTOMATIQUE
-   */
   static async create({ fullname, telephone, role = 'client' }) {
-    const connection = await pool.getConnection();
+  const connection = await pool.getConnection();
+  
+  try {  
+    await connection.beginTransaction();
+
+    console.log('📝 Tentative création utilisateur:', { fullname, telephone, role });
     
-    try {  
-      await connection.beginTransaction();
+    // Vérifier d'abord si le téléphone existe déjà (avec la même connection)
+    const [existingRows] = await connection.execute(
+      'SELECT * FROM Utilisateur WHERE telephone = ?',
+      [telephone]
+    );
+    
+    if (existingRows.length > 0) {
+      throw new Error('Un utilisateur avec ce numéro de téléphone existe déjà');
+    }
 
-      console.log('📝 Tentative création utilisateur:', { fullname, telephone, role });
+    // Créer l'utilisateur
+    const [result] = await connection.execute(
+      `INSERT INTO Utilisateur 
+       (fullname, telephone, role) 
+       VALUES (?, ?, ?)`,
+      [fullname, telephone, role] 
+    );
+
+    const userId = result.insertId;
+    console.log('✅ Utilisateur créé avec ID:', userId);
+
+    // ✅ CRÉATION AUTOMATIQUE DU PROFIL - AVEC LA MÊME CONNECTION
+    try {
+      console.log('👤 Création automatique du profil pour utilisateur:', userId);
       
-      // Vérifier d'abord si le téléphone existe déjà
-      const existingUser = await this.findByTelephone(telephone);
-      if (existingUser) {
-        throw new Error('Un utilisateur avec ce numéro de téléphone existe déjà');
-      }
-
-      const [result] = await connection.execute(
-        `INSERT INTO Utilisateur 
-         (fullname, telephone, role) 
-         VALUES (?, ?, ?)`,
-        [fullname, telephone, role] 
-      );
-
-      const userId = result.insertId;
-      console.log('✅ Utilisateur créé avec ID:', userId);
-
-      // ✅ CRÉATION AUTOMATIQUE DU PROFIL - VERSION CORRIGÉE
-      try {
-        console.log('👤 Création automatique du profil pour utilisateur:', userId);
-        
-        // Générer un email temporaire unique basé sur le téléphone
-        const temporaryEmail = `user_${telephone}@temp.com`;
-        
-        await Profile.create({
-          id_utilisateur: userId,
-          email: temporaryEmail, // ✅ Email temporaire unique
-          adresse: null,
-          ville: null,
-          pays: 'CI',
-          bio: null,
-          avatar: null,
-          preferences: {
+      const temporaryEmail = `user_${telephone}@temp.com`;
+      
+      // Utiliser la même connection transactionnelle
+      const [profileResult] = await connection.execute(
+        `INSERT INTO Profile 
+         (id_utilisateur, email, pays, preferences) 
+         VALUES (?, ?, ?, ?)`,
+        [
+          userId, 
+          temporaryEmail, 
+          'CI', 
+          JSON.stringify({
             notifications: true,
             newsletter: false,
             langue: 'fr'
-          }
-        });
-        
-        console.log('✅ Profil créé automatiquement pour utilisateur:', userId);
-      } catch (profileError) {
-        console.error('❌ Erreur création profil automatique:', profileError);
-        // IMPORTANT: Rollback si le profil échoue
-        await connection.rollback();
-        throw new Error(`Échec création profil: ${profileError.message}`);
-      }
-
-      await connection.commit();
-      console.log('✅ Transaction utilisateur + profil commitée');
-
-      return userId;
-
-    } catch (error) {
+          })
+        ]
+      );
+      
+      console.log('✅ Profil créé automatiquement, ID:', profileResult.insertId);
+      
+    } catch (profileError) {
+      console.error('❌ Erreur création profil automatique:', profileError);
       await connection.rollback();
-      console.error('Erreur création utilisateur - rollback:', error);
-      throw error;
-    } finally {
-      connection.release();
+      throw new Error(`Échec création profil: ${profileError.message}`);
     }
-  }
 
+    await connection.commit();
+    console.log('✅ Transaction utilisateur + profil commitée');
+
+    return userId;
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('Erreur création utilisateur - rollback:', error);
+    throw error;
+  } finally {
+    connection.release(); 
+  }
+}
   /**
    * Trouve un utilisateur par numéro de téléphone
    */ 

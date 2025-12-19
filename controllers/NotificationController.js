@@ -1,9 +1,9 @@
 import Notification from '../models/Notification.js';
 import User from '../models/Utilisateur.js';
-import NotificationService from '../services/notificationService.js';
+import NotificationService from '../services/NotificationService.js';
 import { pool } from '../config/db.js';
 
-export const notificationController = {
+export const NotificationController = {
   /**
    * Récupérer les notifications de l'utilisateur - VERSION AMÉLIORÉE
    */
@@ -658,4 +658,4 @@ export const notificationController = {
   }
 };
 
-export default notificationController;
+export default NotificationController;

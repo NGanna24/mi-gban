@@ -3,7 +3,6 @@ const creation_tables = `
 -- TABLE POUR LE SYSTÈME D'ALERTES
 -- =============================================================================
 
-
 -- Table des utilisateurs
 CREATE TABLE IF NOT EXISTS Utilisateur (
     id_utilisateur INT PRIMARY KEY AUTO_INCREMENT,  
@@ -13,237 +12,6 @@ CREATE TABLE IF NOT EXISTS Utilisateur (
     date_inscription DATETIME DEFAULT CURRENT_TIMESTAMP,
     est_actif BOOLEAN DEFAULT TRUE,
     expo_push_token VARCHAR(255) NULL 
-);
-
-
-CREATE TABLE IF NOT EXISTS Alerte (
-    id_alerte INT PRIMARY KEY AUTO_INCREMENT,
-    id_utilisateur INT NOT NULL,
-    nom_alerte VARCHAR(100) NOT NULL,
-    
-    -- CRITÈRES DE RECHERCHE 
-    type_propriete ENUM(
-        'appartement', 'maison', 'villa', 'studio', 'terrain', 
-        'bureau', 'residence', 'hotel', 'entrepot', 
-        'magasin', 'restaurant', 'immeuble', 'colocation', 'chambre', 
-        'garage', 'ferme', 'hangar', 'loft', 'complexe'
-    ) NULL,
-    
-    type_transaction ENUM('location', 'vente') DEFAULT 'location',
-    ville VARCHAR(100) NULL,
-    quartier VARCHAR(100) NULL,
-    
-    -- BUDGET
-    prix_min DECIMAL(15, 2) NULL,
-    prix_max DECIMAL(15, 2) NULL,
-    
-    -- SURFACE
-    surface_min DECIMAL(10, 2) NULL,
-    surface_max DECIMAL(10, 2) NULL,
-    
-    -- CARACTÉRISTIQUES
-    nbr_chambres_min INT NULL,
-    nbr_salles_bain_min INT NULL,
-    
-    -- ÉQUIPEMENTS (stockés en JSON pour flexibilité)
-    equipements JSON NULL,
-    
-    -- CONFIGURATION DE L'ALERTE
-    est_alerte_active BOOLEAN DEFAULT TRUE,
-    frequence_alerte ENUM('quotidien', 'hebdomadaire', 'mensuel') DEFAULT 'quotidien',
-    notifications_actives BOOLEAN DEFAULT TRUE,
-    
-    -- DATES
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    date_derniere_notification DATETIME NULL,
-    date_mise_a_jour DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    -- STATISTIQUES
-    nombre_notifications_envoyees INT DEFAULT 0,
-    dernier_resultat_count INT DEFAULT 0,
-    
-    -- CONTRAINTES
-    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
-    
-    -- CONTRAINTES DE VALIDATION
-    CONSTRAINT chk_prix_valide CHECK (prix_min <= prix_max OR prix_min IS NULL OR prix_max IS NULL),
-    CONSTRAINT chk_surface_valide CHECK (surface_min <= surface_max OR surface_min IS NULL OR surface_max IS NULL),
-    CONSTRAINT chk_criteres_minimum CHECK (
-        type_propriete IS NOT NULL OR 
-        ville IS NOT NULL OR 
-        quartier IS NOT NULL OR
-        prix_min IS NOT NULL OR
-        surface_min IS NOT NULL
-    ),
-    
-    -- INDEX POUR LES PERFORMANCES
-    INDEX idx_alerte_utilisateur (id_utilisateur),
-    INDEX idx_alerte_type_propriete (type_propriete),
-    INDEX idx_alerte_ville (ville),
-    INDEX idx_alerte_quartier (quartier),
-    INDEX idx_alerte_type_transaction (type_transaction),
-    INDEX idx_alerte_prix_min (prix_min),
-    INDEX idx_alerte_prix_max (prix_max),
-    INDEX idx_alerte_surface_min (surface_min),
-    INDEX idx_alerte_surface_max (surface_max),
-    INDEX idx_alerte_active (est_alerte_active),
-    INDEX idx_alerte_frequence (frequence_alerte),
-    INDEX idx_alerte_date_creation (date_creation)
-);
-
--- =============================================================================
--- TABLE POUR L'HISTORIQUE DES NOTIFICATIONS D'ALERTE
--- =============================================================================
-
-CREATE TABLE IF NOT EXISTS HistoriqueAlerte (
-    id_historique INT PRIMARY KEY AUTO_INCREMENT,
-    id_alerte INT NOT NULL,
-    nombre_nouvelles_proprietes INT DEFAULT 0,
-    proprietes_trouvees JSON NULL, -- Stocke les IDs des propriétés trouvées
-    date_notification DATETIME DEFAULT CURRENT_TIMESTAMP,
-    statut ENUM('envoyee', 'lue', 'ignoree') DEFAULT 'envoyee',
-    
-    FOREIGN KEY (id_alerte) REFERENCES Alerte(id_alerte) ON DELETE CASCADE,
-    INDEX idx_historique_alerte (id_alerte),
-    INDEX idx_historique_date (date_notification),
-    INDEX idx_historique_statut (statut)
-);
-
--- =============================================================================
--- VUE POUR LES ALERTES ACTIVES AVEC CRITÈRES
--- =============================================================================
-
-CREATE OR REPLACE VIEW Vue_Alertes_Actives AS
-SELECT 
-    a.*,
-    u.fullname,
-    u.telephone,
-    p.email,
-    COUNT(h.id_historique) as nombre_notifications_historique
-FROM Alerte a
-JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
-LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-LEFT JOIN HistoriqueAlerte h ON a.id_alerte = h.id_alerte
-WHERE a.est_alerte_active = TRUE
-AND u.est_actif = TRUE
-GROUP BY a.id_alerte
-ORDER BY a.date_creation DESC;
-
--- =============================================================================
--- VUE POUR LES ALERTES AVEC DÉTAILS DES CRITÈRES
--- =============================================================================
-
-CREATE OR REPLACE VIEW Vue_Alertes_Details AS
-SELECT 
-    a.id_alerte,
-    a.nom_alerte,
-    a.id_utilisateur,
-    u.fullname as utilisateur_nom,
-    p.avatar as utilisateur_avatar,
-    a.type_propriete,
-    a.type_transaction,
-    a.ville,
-    a.quartier,
-    a.prix_min,
-    a.prix_max,
-    a.surface_min,
-    a.surface_max,
-    a.nbr_chambres_min,
-    a.nbr_salles_bain_min,
-    a.equipements,
-    a.est_alerte_active,
-    a.frequence_alerte,
-    a.notifications_actives,
-    a.date_creation,
-    a.date_derniere_notification,
-    a.nombre_notifications_envoyees,
-    a.dernier_resultat_count,
-    -- Calcul du nombre de propriétés correspondantes actuelles
-    (SELECT COUNT(*) 
-     FROM Propriete prop 
-     WHERE prop.statut = 'disponible'
-     AND (a.type_propriete IS NULL OR prop.type_propriete = a.type_propriete)
-     AND (a.type_transaction IS NULL OR prop.type_transaction = a.type_transaction)
-     AND (a.ville IS NULL OR prop.ville LIKE CONCAT('%', a.ville, '%'))
-     AND (a.quartier IS NULL OR prop.quartier LIKE CONCAT('%', a.quartier, '%'))
-     AND (a.prix_min IS NULL OR prop.prix >= a.prix_min)
-     AND (a.prix_max IS NULL OR prop.prix <= a.prix_max)
-    ) as proprietes_correspondantes_actuelles
-FROM Alerte a
-JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
-LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-WHERE u.est_actif = TRUE;
-
--- Message de confirmation final
-SELECT 'Système d''alertes créé avec succès!' as message;
-
--- =============================================================================
--- CRÉATION COMPLÈTE DE LA BASE DE DONNÉES AVEC LA STRUCTURE SIMPLIFIÉE
--- =============================================================================
-
-
-
--- CRÉER LA NOUVELLE STRUCTURE
-CREATE TABLE IF NOT EXISTS PreferencesUtilisateur (
-    id_preference INT PRIMARY KEY AUTO_INCREMENT,
-    id_utilisateur INT NOT NULL,
-    
-    -- ÉTAPE 1: PROJET
-    projet ENUM('acheter', 'louer', 'visiter') NULL,
-    
-    -- ÉTAPE 2: BUDGET
-    budget_max DECIMAL(15, 2) NULL,
-    
-    -- DATES
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
-    date_mise_a_jour DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    -- CONTRAINTES
-    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
-    UNIQUE KEY unique_utilisateur_preferences (id_utilisateur),
-    
-    INDEX idx_utilisateur_preferences (id_utilisateur),
-    INDEX idx_projet (projet),
-    INDEX idx_budget (budget_max)
-);
-
--- TABLE POUR LES VILLES PRÉFÉRÉES
-CREATE TABLE IF NOT EXISTS PreferenceVille (
-    id_preference_ville INT PRIMARY KEY AUTO_INCREMENT,
-    id_preference INT NOT NULL,
-    ville VARCHAR(100) NOT NULL,
-    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
-    UNIQUE KEY unique_ville_preference (id_preference, ville),
-    INDEX idx_preference_ville (id_preference),
-    INDEX idx_ville (ville)
-);
-
--- TABLE POUR LES TYPES DE BIENS PRÉFÉRÉS
-CREATE TABLE IF NOT EXISTS PreferenceTypeBien (
-    id_preference_type INT PRIMARY KEY AUTO_INCREMENT,
-    id_preference INT NOT NULL,
-    type_bien VARCHAR(50) NOT NULL,
-    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
-    UNIQUE KEY unique_type_preference (id_preference, type_bien),
-    INDEX idx_preference_type (id_preference),
-    INDEX idx_type_bien (type_bien)
-);
-
--- TABLE POUR LES QUARTIERS PRÉFÉRÉS
-CREATE TABLE IF NOT EXISTS PreferenceQuartier (
-    id_preference_quartier INT PRIMARY KEY AUTO_INCREMENT,
-    id_preference INT NOT NULL,
-    quartier VARCHAR(100) NOT NULL,
-    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
-    UNIQUE KEY unique_quartier_preference (id_preference, quartier),
-    INDEX idx_preference_quartier (id_preference),
-    INDEX idx_quartier (quartier)
 );
 
 CREATE TABLE IF NOT EXISTS Profile (
@@ -381,6 +149,234 @@ CREATE TABLE IF NOT EXISTS Media (
     INDEX idx_media_propriete (id_propriete),
     INDEX idx_media_type (type),
     INDEX idx_media_ordre (ordre_affichage)
+);
+
+CREATE TABLE IF NOT EXISTS Alerte (
+    id_alerte INT PRIMARY KEY AUTO_INCREMENT,
+    id_utilisateur INT NOT NULL,
+    nom_alerte VARCHAR(100) NOT NULL,
+    
+    -- CRITÈRES DE RECHERCHE 
+    type_propriete ENUM(
+        'appartement', 'maison', 'villa', 'studio', 'terrain', 
+        'bureau', 'residence', 'hotel', 'entrepot', 
+        'magasin', 'restaurant', 'immeuble', 'colocation', 'chambre', 
+        'garage', 'ferme', 'hangar', 'loft', 'complexe'
+    ) NULL,
+    
+    type_transaction ENUM('location', 'vente') DEFAULT 'location',
+    ville VARCHAR(100) NULL,
+    quartier VARCHAR(100) NULL,
+    
+    -- BUDGET
+    prix_min DECIMAL(15, 2) NULL,
+    prix_max DECIMAL(15, 2) NULL,
+    
+    -- SURFACE
+    surface_min DECIMAL(10, 2) NULL,
+    surface_max DECIMAL(10, 2) NULL,
+    
+    -- CARACTÉRISTIQUES
+    nbr_chambres_min INT NULL,
+    nbr_salles_bain_min INT NULL,
+    
+    -- ÉQUIPEMENTS (stockés en JSON pour flexibilité)
+    equipements JSON NULL,
+    
+    -- CONFIGURATION DE L'ALERTE
+    est_alerte_active BOOLEAN DEFAULT TRUE,
+    frequence_alerte ENUM('quotidien', 'hebdomadaire', 'mensuel') DEFAULT 'quotidien',
+    notifications_actives BOOLEAN DEFAULT TRUE,
+    
+    -- DATES
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    date_derniere_notification DATETIME NULL,
+    date_mise_a_jour DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- STATISTIQUES
+    nombre_notifications_envoyees INT DEFAULT 0,
+    dernier_resultat_count INT DEFAULT 0,
+    
+    -- CONTRAINTES
+    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
+    
+    -- CONTRAINTES DE VALIDATION
+    CONSTRAINT chk_prix_valide CHECK (prix_min <= prix_max OR prix_min IS NULL OR prix_max IS NULL),
+    CONSTRAINT chk_surface_valide CHECK (surface_min <= surface_max OR surface_min IS NULL OR surface_max IS NULL),
+    CONSTRAINT chk_criteres_minimum CHECK (
+        type_propriete IS NOT NULL OR 
+        ville IS NOT NULL OR 
+        quartier IS NOT NULL OR
+        prix_min IS NOT NULL OR
+        surface_min IS NOT NULL
+    ),
+    
+    -- INDEX POUR LES PERFORMANCES
+    INDEX idx_alerte_utilisateur (id_utilisateur),
+    INDEX idx_alerte_type_propriete (type_propriete),
+    INDEX idx_alerte_ville (ville),
+    INDEX idx_alerte_quartier (quartier),
+    INDEX idx_alerte_type_transaction (type_transaction),
+    INDEX idx_alerte_prix_min (prix_min),
+    INDEX idx_alerte_prix_max (prix_max),
+    INDEX idx_alerte_surface_min (surface_min),
+    INDEX idx_alerte_surface_max (surface_max),
+    INDEX idx_alerte_active (est_alerte_active),
+    INDEX idx_alerte_frequence (frequence_alerte),
+    INDEX idx_alerte_date_creation (date_creation)
+);
+
+-- =============================================================================
+-- TABLE POUR L'HISTORIQUE DES NOTIFICATIONS D'ALERTE
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS HistoriqueAlerte (
+    id_historique INT PRIMARY KEY AUTO_INCREMENT,
+    id_alerte INT NOT NULL,
+    nombre_nouvelles_proprietes INT DEFAULT 0,
+    proprietes_trouvees JSON NULL, -- Stocke les IDs des propriétés trouvées
+    date_notification DATETIME DEFAULT CURRENT_TIMESTAMP,
+    statut ENUM('envoyee', 'lue', 'ignoree') DEFAULT 'envoyee',
+    
+    FOREIGN KEY (id_alerte) REFERENCES Alerte(id_alerte) ON DELETE CASCADE,
+    INDEX idx_historique_alerte (id_alerte),
+    INDEX idx_historique_date (date_notification),
+    INDEX idx_historique_statut (statut)
+);
+
+-- =============================================================================
+-- VUE POUR LES ALERTES ACTIVES AVEC CRITÈRES
+-- =============================================================================
+
+CREATE OR REPLACE VIEW Vue_Alertes_Actives AS
+SELECT 
+    a.*,
+    u.fullname,
+    u.telephone,
+    p.email,
+    COUNT(h.id_historique) as nombre_notifications_historique
+FROM Alerte a
+INNER JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
+LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+LEFT JOIN HistoriqueAlerte h ON a.id_alerte = h.id_alerte
+WHERE a.est_alerte_active = TRUE
+AND u.est_actif = TRUE
+GROUP BY a.id_alerte
+ORDER BY a.date_creation DESC;
+
+-- =============================================================================
+-- VUE POUR LES ALERTES AVEC DÉTAILS DES CRITÈRES
+-- =============================================================================
+
+CREATE OR REPLACE VIEW Vue_Alertes_Details AS
+SELECT 
+    a.id_alerte,
+    a.nom_alerte,
+    a.id_utilisateur,
+    u.fullname as utilisateur_nom,
+    p.avatar as utilisateur_avatar,
+    a.type_propriete,
+    a.type_transaction,
+    a.ville,
+    a.quartier,
+    a.prix_min,
+    a.prix_max,
+    a.surface_min,
+    a.surface_max,
+    a.nbr_chambres_min,
+    a.nbr_salles_bain_min,
+    a.equipements,
+    a.est_alerte_active,
+    a.frequence_alerte,
+    a.notifications_actives,
+    a.date_creation,
+    a.date_derniere_notification,
+    a.nombre_notifications_envoyees,
+    a.dernier_resultat_count,
+    -- Calcul du nombre de propriétés correspondantes actuelles
+    (SELECT COUNT(*) 
+     FROM Propriete prop 
+     WHERE prop.statut = 'disponible'
+     AND (a.type_propriete IS NULL OR prop.type_propriete = a.type_propriete)
+     AND (a.type_transaction IS NULL OR prop.type_transaction = a.type_transaction)
+     AND (a.ville IS NULL OR prop.ville LIKE CONCAT('%', a.ville, '%'))
+     AND (a.quartier IS NULL OR prop.quartier LIKE CONCAT('%', a.quartier, '%'))
+     AND (a.prix_min IS NULL OR prop.prix >= a.prix_min)
+     AND (a.prix_max IS NULL OR prop.prix <= a.prix_max)
+    ) as proprietes_correspondantes_actuelles
+FROM Alerte a
+INNER JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
+LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+WHERE u.est_actif = TRUE;
+
+-- Message de confirmation final
+SELECT 'Système d''alertes créé avec succès!' as message;
+
+-- =============================================================================
+-- CRÉATION COMPLÈTE DE LA BASE DE DONNÉES AVEC LA STRUCTURE SIMPLIFIÉE
+-- =============================================================================
+
+-- CRÉER LA NOUVELLE STRUCTURE
+CREATE TABLE IF NOT EXISTS PreferencesUtilisateur (
+    id_preference INT PRIMARY KEY AUTO_INCREMENT,
+    id_utilisateur INT NOT NULL,
+    
+    -- ÉTAPE 1: PROJET
+    projet ENUM('acheter', 'louer', 'visiter') NULL,
+    
+    -- ÉTAPE 2: BUDGET
+    budget_max DECIMAL(15, 2) NULL,
+    
+    -- DATES
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    date_mise_a_jour DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- CONTRAINTES
+    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
+    UNIQUE KEY unique_utilisateur_preferences (id_utilisateur),
+    
+    INDEX idx_utilisateur_preferences (id_utilisateur),
+    INDEX idx_projet (projet),
+    INDEX idx_budget (budget_max)
+);
+
+-- TABLE POUR LES VILLES PRÉFÉRÉES
+CREATE TABLE IF NOT EXISTS PreferenceVille (
+    id_preference_ville INT PRIMARY KEY AUTO_INCREMENT,
+    id_preference INT NOT NULL,
+    ville VARCHAR(100) NOT NULL,
+    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
+    UNIQUE KEY unique_ville_preference (id_preference, ville),
+    INDEX idx_preference_ville (id_preference),
+    INDEX idx_ville (ville)
+);
+
+-- TABLE POUR LES TYPES DE BIENS PRÉFÉRÉS
+CREATE TABLE IF NOT EXISTS PreferenceTypeBien (
+    id_preference_type INT PRIMARY KEY AUTO_INCREMENT,
+    id_preference INT NOT NULL,
+    type_bien VARCHAR(50) NOT NULL,
+    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
+    UNIQUE KEY unique_type_preference (id_preference, type_bien),
+    INDEX idx_preference_type (id_preference),
+    INDEX idx_type_bien (type_bien)
+);
+
+-- TABLE POUR LES QUARTIERS PRÉFÉRÉS
+CREATE TABLE IF NOT EXISTS PreferenceQuartier (
+    id_preference_quartier INT PRIMARY KEY AUTO_INCREMENT,
+    id_preference INT NOT NULL,
+    quartier VARCHAR(100) NOT NULL,
+    date_ajout DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (id_preference) REFERENCES PreferencesUtilisateur(id_preference) ON DELETE CASCADE,
+    UNIQUE KEY unique_quartier_preference (id_preference, quartier),
+    INDEX idx_preference_quartier (id_preference),
+    INDEX idx_quartier (quartier)
 );
 
 -- Table des caractéristiques
@@ -637,8 +633,6 @@ CREATE TABLE IF NOT EXISTS Reservation (
     -- Contraintes de clés étrangères
     FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur),
     FOREIGN KEY (id_propriete) REFERENCES Propriete(id_propriete) ON DELETE CASCADE,
-
-    -- ✅ SUPPR -- ✅ SUPPRIMÉ : id_paiement et sa contrainte
     
     -- Contrainte d'unicité pour éviter les doubles réservations
     UNIQUE KEY unique_creneau_propriete (id_propriete, date_visite, heure_visite),
@@ -650,7 +644,6 @@ CREATE TABLE IF NOT EXISTS Reservation (
     INDEX idx_reservation_statut (statut),
     INDEX idx_reservation_utilisateur_propriete (id_utilisateur, id_propriete)
 );
-
 
 -- Table des messages/contacts
 CREATE TABLE IF NOT EXISTS Message ( 
@@ -811,7 +804,6 @@ LEFT JOIN SuiviAgence s_suivis ON u.id_utilisateur = s_suivis.id_suiveur
 WHERE u.role IN ('agent', 'admin') AND u.est_actif = TRUE
 GROUP BY u.id_utilisateur;
 
--- Vue pour le fil d'actualités des agences suivies
 CREATE OR REPLACE VIEW Vue_Actualites_Suivis AS
 SELECT 
     p.*,
@@ -822,17 +814,18 @@ SELECT
     s.date_suivi
 FROM Propriete p
 JOIN Utilisateur u ON p.id_utilisateur = u.id_utilisateur
-JOIN Profile p_agence ON u.id_utilisateur = p_agence.id_utilisateur
-JOIN SuiviAgence s ON p.id_utilisateur = s.id_suivi_utilisateur
+LEFT JOIN Profile p_agence ON u.id_utilisateur = p_agence.id_utilisateur
+JOIN SuiviAgence s ON u.id_utilisateur = s.id_suivi_utilisateur
 WHERE p.statut = 'disponible' 
 AND s.notifications_actives = TRUE
 AND u.est_actif = TRUE
 ORDER BY p.date_creation DESC;
 
--- Réactiver les contraintes
-SET FOREIGN_KEY_CHECKS=1;
+-- =============================================================================
+-- FIN DU SCRIPT
+-- =============================================================================
+SELECT 'Toutes les tables et vues ont été créées avec succès!' as message;
+`;
 
--- Message de confirmation
-SELECT 'Base de données créée avec succès avec le système de suivi des agences!' as message;`;
 
 export default { creation_tables };

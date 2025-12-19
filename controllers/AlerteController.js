@@ -1,5 +1,5 @@
 import Alerte from '../models/Alerte.js';
-import { sendPushNotification } from '../services/notificationService.js';
+import { sendPushNotification } from '../services/NotificationService.js';
 import { pool } from '../config/db.js';
 
 export const AlerteController = {
