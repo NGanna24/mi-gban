@@ -502,7 +502,7 @@ class User {
   }
 
   /** 
-   * Récupérer le token Expo d'un utilisateur
+   * Récupérer le token Expo d'un utilisateur 
    */
   static async getExpoPushToken(userId) {
     try {

@@ -21,7 +21,7 @@ const pool = createPool({
 
 const initDataBase = async () => {
     let connection;
-
+ 
     try {
         // Acquérir une connexion depuis le pool
         connection = await pool.getConnection();
@@ -56,3 +56,4 @@ const initDataBase = async () => {
 
 // Exportation du pool et des fonctions
 export  { pool, initDataBase };
+ 

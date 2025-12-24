@@ -41,7 +41,6 @@ router.get('/recherche/filtres', ProprieteController.getAvailableFilters);
 router.get('/recherche/caracteristiques', ProprieteController.getSearchCharacteristics);
 router.get('/recherche/avancee', authenticateToken, ProprieteController.rechercherProprietesAvancee);
 router.get('/recherche/rapide', ProprieteController.rechercherProprietesRapide);
-router.get('/populaires/trending', ProprieteController.getProprietesPopulaires);
 router.get('/caracteristiques/:type_propriete', ProprieteController.getCaracteristiquesByType);
 router.get('/user/:id_utilisateur', ProprieteController.getProprietesByUtilisateur);
 router.get('/slug/:slug', ProprieteController.getProprieteParSlug);

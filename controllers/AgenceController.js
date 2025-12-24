@@ -1132,40 +1132,287 @@ async getReservationsByAgency(req, res) {
     }
   },
 
-  /**
-   * Mettre à jour le statut d'une réservation
-   */
-  async updateReservationStatus(req, res) {
+/**
+ * Mettre à jour le statut d'une réservation + NOTIFICATION - VERSION COMPLÈTE
+ */
+async updateReservationStatus(req, res) {
+  try {
+    const { id_reservation } = req.params;
+    const { newStatus, message } = req.body;
+    const updatedBy = req.user.id;
+
+    console.log('🔄 Mise à jour statut réservation - Réservation:', id_reservation, 
+                'Nouveau statut:', newStatus, 'Par:', updatedBy);
+
+    if (!newStatus) { 
+      return res.status(400).json({
+        success: false,
+        message: 'Le nouveau statut est requis'
+      });
+    }
+
+    // 1. Récupérer les détails COMPLETS avant mise à jour
+    let oldStatus;
+    let reservationData;
+    let propertyData;
+    
     try {
-      const { id_reservation } = req.params;
-      const { newStatus } = req.body;
-      const updatedBy = req.user.id;
+      // Récupérer la réservation avec toutes les infos de la propriété
+      const [reservationResult] = await pool.execute(`
+        SELECT 
+          r.*,
+          r.statut as old_status,
+          u.id_utilisateur as visiteur_id,
+          u.fullname as visiteur_nom,
+          u.expo_push_token as visiteur_token,
+          p.id_propriete,
+          p.titre as propriete_titre,
+          p.type_transaction,
+          p.statut as propriete_statut,
+          p.id_utilisateur as id_proprietaire,
+          p.prix,
+          p.type_propriete,
+          p.ville,
+          p.quartier,
+          pu.fullname as proprietaire_nom,
+          pu.expo_push_token as proprietaire_token
+        FROM Reservation r
+        JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
+        JOIN Propriete p ON r.id_propriete = p.id_propriete
+        JOIN Utilisateur pu ON p.id_utilisateur = pu.id_utilisateur
+        WHERE r.id_reservation = ?
+      `, [id_reservation]);
 
-      console.log('🔄 Mise à jour statut réservation - Réservation:', id_reservation, 'Nouveau statut:', newStatus);
-
-      if (!newStatus) { 
-        return res.status(400).json({
+      if (reservationResult.length === 0) {
+        return res.status(404).json({
           success: false,
-          message: 'Le nouveau statut est requis'
+          message: 'Réservation non trouvée'
         });
       }
 
-      const result = await Agence.updateReservationStatus(id_reservation, newStatus, updatedBy);
-
-      res.json({
-        success: true,
-        data: result
+      reservationData = reservationResult[0];
+      oldStatus = reservationData.old_status;
+      
+      console.log(`📋 Détails récupérés:`, {
+        id_reservation: reservationData.id_reservation,
+        old_status: oldStatus,
+        new_status: newStatus,
+        type_transaction: reservationData.type_transaction,
+        propriete_id: reservationData.id_propriete,
+        propriete_statut: reservationData.propriete_statut,
+        proprietaire_id: reservationData.id_proprietaire,
+        visiteur_id: reservationData.visiteur_id
       });
 
     } catch (error) {
-      console.error('❌ Erreur mise à jour statut réservation:', error);
-      res.status(error.message.includes('non trouvée') ? 404 : 
-                error.message.includes('non autorisée') ? 400 : 500).json({
+      console.error('❌ Erreur récupération détails réservation:', error);
+      oldStatus = 'inconnu';
+    }
+
+    // 2. Mettre à jour le statut de la réservation
+    const result = await Agence.updateReservationStatus(id_reservation, newStatus, updatedBy);
+    
+    if (!result.success) {
+      return res.status(result.statusCode || 500).json({
         success: false,
-        message: error.message
+        message: result.message || 'Erreur lors de la mise à jour du statut'
       });
     }
-  },
+
+    // 3. 🔄 MISE À JOUR DU STATUT DE LA PROPRIÉTÉ SI NÉCESSAIRE
+    let propertyUpdateResult = null;
+    
+    if (newStatus === 'termine') {
+      console.log(`🏠 Réservation terminée - Vérification mise à jour propriété...`);
+      
+      try {
+        // Logique différente selon le type de transaction
+        if (reservationData.type_transaction === 'location') {
+          // Pour une location terminée, la propriété peut redevenir disponible
+          console.log(`📍 Location terminée - Passage de la propriété à "disponible"`);
+          
+          await pool.execute(
+            `UPDATE Propriete SET statut = 'disponible', date_modification = NOW() WHERE id_propriete = ?`,
+            [reservationData.id_propriete]
+          );
+          
+          propertyUpdateResult = {
+            updated: true,
+            new_status: 'disponible',
+            message: 'Propriété remise en location'
+          };
+          
+          console.log(`✅ Propriété ${reservationData.id_propriete} remise à "disponible"`);
+          
+        } else if (reservationData.type_transaction === 'vente') {
+          // Pour une vente terminée, la propriété devient "vendu"
+          console.log(`💰 Vente terminée - Passage de la propriété à "vendu"`);
+          
+          await pool.execute(
+            `UPDATE Propriete SET statut = 'vendu', date_modification = NOW() WHERE id_propriete = ?`,
+            [reservationData.id_propriete]
+          );
+          
+          propertyUpdateResult = {
+            updated: true,
+            new_status: 'vendu',
+            message: 'Propriété marquée comme vendue'
+          };
+          
+          console.log(`✅ Propriété ${reservationData.id_propriete} marquée comme "vendu"`);
+          
+          // Ajouter une notification pour le nouveau propriétaire ?
+          // await notifyNewOwner(...);
+        }
+        
+      } catch (propertyError) {
+        console.error('❌ Erreur mise à jour propriété:', propertyError);
+        propertyUpdateResult = {
+          updated: false,
+          error: propertyError.message
+        };
+      }
+    }
+    
+    // 4. 🔔 ENVOYER UNE NOTIFICATION PUSH AUX CONCERNÉS
+    let notificationResult = null;
+    try {
+      console.log('🔔 Début envoi notifications changement statut...');
+      
+      if (reservationData) {
+        // Récupérer les détails MIS À JOUR de la réservation
+        const [updatedReservation] = await pool.execute(`
+          SELECT r.* FROM Reservation r WHERE r.id_reservation = ?
+        `, [id_reservation]);
+        
+        if (updatedReservation.length > 0) {
+          // Combiner les anciennes données avec le nouveau statut
+          const reservationForNotification = {
+            ...reservationData,
+            ...updatedReservation[0]
+          };
+          
+          notificationResult = await NotificationService.notifyReservationStatusChange(
+            reservationForNotification,  // objet réservation complet avec nouveau statut
+            oldStatus,                   // ancien statut
+            newStatus,                   // nouveau statut
+            message                      // message optionnel
+          );
+          
+          console.log('📊 Résultat notification:', notificationResult);
+        }
+      }
+    } catch (notifError) {
+      console.error('⚠️ Erreur envoi notification:', notifError.message);
+      notificationResult = { error: notifError.message };
+    }
+
+    // 5. 🔔 CRÉER UNE NOTIFICATION EN BASE DE DONNÉES
+    try {
+      if (reservationData) {
+        // Notification pour le VISITEUR
+        await pool.execute(`
+          INSERT INTO Notification (
+            id_utilisateur, 
+            titre, 
+            message, 
+            type, 
+            metadata, 
+            date_creation, 
+            est_lu
+          ) VALUES (?, ?, ?, ?, ?, NOW(), FALSE)
+        `, [
+          reservationData.visiteur_id,
+          `Statut réservation ${newStatus}`,
+          `Votre réservation pour "${reservationData.propriete_titre}" est maintenant ${newStatus}.`,
+          'reservation_status_change',
+          JSON.stringify({
+            reservation_id: id_reservation,
+            old_status: oldStatus,
+            new_status: newStatus,
+            property_id: reservationData.id_propriete,
+            property_title: reservationData.propriete_titre,
+            updated_by: updatedBy,
+            message: message || null,
+            property_updated: propertyUpdateResult?.updated || false,
+            new_property_status: propertyUpdateResult?.new_status || null,
+            timestamp: new Date().toISOString()
+          })
+        ]);
+        
+        // Optionnel: Notification pour le PROPRIÉTAIRE
+        if (newStatus === 'confirme' || newStatus === 'annule' || newStatus === 'termine') {
+          await pool.execute(`
+            INSERT INTO Notification (
+              id_utilisateur, 
+              titre, 
+              message, 
+              type, 
+              metadata, 
+              date_creation, 
+              est_lu
+            ) VALUES (?, ?, ?, ?, ?, NOW(), FALSE)
+          `, [
+            reservationData.id_proprietaire,
+            `Réservation ${newStatus}`,
+            `La réservation de ${reservationData.visiteur_nom} pour "${reservationData.propriete_titre}" est maintenant ${newStatus}.`,
+            'reservation_status_change_owner',
+            JSON.stringify({
+              reservation_id: id_reservation,
+              old_status: oldStatus,
+              new_status: newStatus,
+              property_id: reservationData.id_propriete,
+              visitor_name: reservationData.visiteur_nom,
+              updated_by: updatedBy,
+              message: message || null,
+              timestamp: new Date().toISOString()
+            })
+          ]);
+        }
+        
+        console.log('💾 Notifications sauvegardées en BDD');
+      }
+    } catch (dbNotifError) {
+      console.error('⚠️ Erreur création notification BDD:', dbNotifError.message);
+    }
+
+    // 6. Retourner la réponse COMPLÈTE
+    res.json({
+      success: true,
+      message: `Statut mis à jour avec succès (${oldStatus} → ${newStatus})`,
+      data: {
+        reservation: result.data,
+        oldStatus: oldStatus,
+        newStatus: newStatus,
+        propertyUpdate: propertyUpdateResult,
+        notification: {
+          sent: notificationResult?.success || false,
+          details: notificationResult
+        },
+        metadata: {
+          transaction_type: reservationData?.type_transaction,
+          property_id: reservationData?.id_propriete,
+          property_title: reservationData?.propriete_titre,
+          visitor_name: reservationData?.visiteur_nom,
+          owner_name: reservationData?.proprietaire_nom
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur mise à jour statut réservation:', error);
+    
+    const statusCode = error.message.includes('non trouvée') ? 404 : 
+                      error.message.includes('non autorisée') ? 403 : 
+                      error.message.includes('statut invalide') ? 400 : 500;
+    
+    res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Erreur lors de la mise à jour du statut',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+},
 
   /**
    * Métriques du dashboard

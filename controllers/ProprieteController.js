@@ -553,34 +553,7 @@ export const ProprieteController = {
     }
   },
 
-  // 🏆 Récupérer les propriétés populaires
-  async getProprietesPopulaires(req, res) {
-    try {
-      const { limit = 10, type_transaction = null } = req.query;
 
-      const proprietes = await Propriete.getPopulaires(parseInt(limit), type_transaction);
-
-      // Ajouter les URLs complètes pour les médias
-      const proprietesWithUrls = proprietes.map(propriete => ({
-        ...propriete,
-        media_principal: propriete.media_principal 
-          ? `${req.protocol}://${req.get('host')}/uploads/properties/${propriete.media_principal}`
-          : null
-      }));
-
-      res.json({
-        success: true,
-        data: proprietesWithUrls
-      });
-
-    } catch (error) {
-      console.error('Erreur récupération propriétés populaires:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la récupération des propriétés populaires'
-      });
-    }
-  },
 
   // 🔍 Récupérer une propriété par son slug
   async getProprieteParSlug(req, res) {

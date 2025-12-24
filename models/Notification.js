@@ -1,7 +1,7 @@
 import { pool } from '../config/db.js';
 
 class Notification {
-  /**
+  /** 
    * Créer une notification avec metadata
    */
   static async create(notificationData) {

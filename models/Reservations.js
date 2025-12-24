@@ -1,4 +1,6 @@
 import { pool } from '../config/db.js';
+import { notifyOwnerNewReservation, notifyVisitorReservationRequest } from '../services/NotificationService.js';
+
 
 class Reservation {
   constructor(reservation) {
@@ -26,84 +28,78 @@ class Reservation {
     this.proprietaire_telephone = reservation.proprietaire_telephone;
   }
 
-  // ✅ CRÉATION SIMPLIFIÉE : Créer une réservation directement (sans paiement)
-  static async create(reservationData) {
-    const connection = await pool.getConnection();
-    
-    try {
-      await connection.beginTransaction();
+// Dans Reservations.js - Modifiez la méthode create() :
+static async create(reservationData) {
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
 
-      const {
-        id_utilisateur,
-        id_propriete,
-        date_visite, 
-        heure_visite,
-        nombre_personnes = 1,
-        notes = '',
-        telephone_visiteur = ''
-      } = reservationData;
+    const {
+      id_utilisateur,
+      id_propriete,
+      date_visite, 
+      heure_visite,
+      nombre_personnes = 1,
+      notes = '',
+      telephone_visiteur = ''
+    } = reservationData;
 
-      console.log("📝 Création réservation simplifiée:", { 
-        id_utilisateur, 
-        id_propriete, 
-        date_visite, 
-        heure_visite 
-      });
-
-      // 1. Vérifier si le créneau est disponible
-      const isAvailable = await this.checkAvailability(id_propriete, date_visite, heure_visite);
-      if (!isAvailable) {
-        throw new Error('Ce créneau est déjà réservé');
-      }
-
-      // 2. Vérifier que la propriété existe et est disponible
-      const [proprieteRows] = await connection.execute(
-        'SELECT statut FROM Propriete WHERE id_propriete = ?',
-        [id_propriete]
-      );
-
-      if (proprieteRows.length === 0) {
-        throw new Error('Propriété non trouvée');
-      }
-
-      const propriete = proprieteRows[0];
-      if (propriete.statut !== 'disponible') {
-        throw new Error('Cette propriété n\'est plus disponible pour réservation');
-      }
-
-      // 3. Créer la réservation directement avec statut "confirmée"
-      const [result] = await connection.execute(
-        `INSERT INTO Reservation 
-         (id_utilisateur, id_propriete, date_visite, heure_visite, 
-          nombre_personnes, notes, telephone_visiteur, statut) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'attente')`,
-        [id_utilisateur, id_propriete, date_visite, heure_visite, 
-         nombre_personnes, notes, telephone_visiteur]
-      );
-
-      const reservationId = result.insertId;
-
-      // ✅ 4. METTRE À JOUR LE STATUT DE LA PROPRIÉTÉ
-      await connection.execute(
-        'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
-        ['reserve', id_propriete]
-      );
-
-      console.log('✅ Statut propriété mis à jour: disponible → reserve');
-
-      await connection.commit();
-      
-      console.log('✅ Réservation créée avec succès:', reservationId);
-      return reservationId;
-
-    } catch (error) {
-      await connection.rollback();
-      console.error('❌ Erreur création réservation:', error);
-      throw error;
-    } finally {
-      connection.release();
+    // 1. Vérifier si le créneau est disponible
+    const isAvailable = await this.checkAvailability(id_propriete, date_visite, heure_visite);
+    if (!isAvailable) {
+      throw new Error('Ce créneau est déjà réservé');
     }
+
+    // 2. Vérifier que la propriété existe et est disponible
+    const [proprieteRows] = await connection.execute(
+      `SELECT p.statut, p.id_utilisateur as id_proprietaire, p.titre as propriete_titre 
+       FROM Propriete p WHERE p.id_propriete = ?`,
+      [id_propriete]
+    );
+
+    if (proprieteRows.length === 0) {
+      throw new Error('Propriété non trouvée');
+    }
+
+    const propriete = proprieteRows[0];
+    if (propriete.statut !== 'disponible') {
+      throw new Error('Cette propriété n\'est plus disponible pour réservation');
+    }
+
+    // 3. Créer la réservation
+    const [result] = await connection.execute(
+      `INSERT INTO Reservation 
+       (id_utilisateur, id_propriete, date_visite, heure_visite, 
+        nombre_personnes, notes, telephone_visiteur, statut) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'attente')`,
+      [id_utilisateur, id_propriete, date_visite, heure_visite, 
+       nombre_personnes, notes, telephone_visiteur]
+    );
+
+    const reservationId = result.insertId;
+
+    // 4. Mettre à jour le statut de la propriété
+    await connection.execute(
+      'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
+      ['reserve', id_propriete]
+    );
+
+    await connection.commit();
+    
+    console.log('✅ Réservation créée avec succès:', reservationId);
+    
+    // 5. RETOURNER L'ID SEULEMENT - LES NOTIFICATIONS SERONT FAITES DANS LE CONTROLLEUR
+    return reservationId;
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('❌ Erreur création réservation:', error);
+    throw error;
+  } finally {
+    connection.release();
   }
+}
 
   // ✅ Récupérer une réservation par ID avec toutes les infos
   static async findById(id_reservation) {
@@ -260,78 +256,92 @@ class Reservation {
     }
   }
 
-  // ✅ Mettre à jour le statut d'une réservation
-  static async updateStatus(id_reservation, statut, message_agent = null) {
-    const connection = await pool.getConnection();
+// ✅ Mettre à jour le statut d'une réservation
+static async updateStatus(id_reservation, statut, message_agent = null) {
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
+
+    const statutsValides = ['confirme', 'annule', 'termine', 'refuse'];
     
-    try {
-      await connection.beginTransaction();
-
-      const statutsValides = ['confirme', 'annule', 'termine', 'refuse'];
-      
-      if (!statutsValides.includes(statut)) {
-        throw new Error('Statut invalide');
-      }
-
-      // Récupérer la réservation pour avoir l'ID de la propriété
-      const reservation = await this.findById(id_reservation);
-      if (!reservation) {
-        throw new Error('Réservation non trouvée');
-      }
-
-      let query = 'UPDATE Reservation SET statut = ?, date_modification = NOW()';
-      let params = [statut];
-
-      if (message_agent) {
-        query += ', message_agent = ?';
-        params.push(message_agent);
-      }
-
-      query += ' WHERE id_reservation = ?';
-      params.push(id_reservation);
-
-      const [result] = await connection.execute(query, params);
-
-      if (result.affectedRows === 0) {
-        throw new Error('Réservation non trouvée');
-      }
-
-      // ✅ METTRE À JOUR LE STATUT DE LA PROPRIÉTÉ SELON LE STATUT DE LA RÉSERVATION
-      let nouveauStatutPropriete = 'disponible';
-      
-      switch(statut) {
-        case 'confirme':
-          nouveauStatutPropriete = 'reserve';
-          break;
-        case 'annule':
-          nouveauStatutPropriete = 'disponible';
-          break;
-        case 'termine':
-          nouveauStatutPropriete = 'disponible'; // Ou 'loué'/'vendu' selon le cas
-          break;
-        case 'refuse':
-          nouveauStatutPropriete = 'disponible';
-          break;
-      }
-
-      await connection.execute(
-        'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
-        [nouveauStatutPropriete, reservation.id_propriete]
-      );
-
-      console.log(`✅ Statut propriété mis à jour: ${nouveauStatutPropriete}`);
-
-      await connection.commit();
-      return await this.findById(id_reservation);
-
-    } catch (error) {
-      await connection.rollback();
-      console.error('❌ Erreur mise à jour statut:', error);
-      throw error;
-    } finally {
-      connection.release();
+    if (!statutsValides.includes(statut)) {
+      throw new Error('Statut invalide');
     }
+
+    // Récupérer la réservation pour avoir l'ID de la propriété
+    const reservation = await this.findById(id_reservation);
+    
+    if (!reservation) {
+      throw new Error('Réservation non trouvée');
+    }
+
+    // Sauvegarder l'ancien statut AVANT mise à jour
+    const ancienStatut = reservation.statut;
+
+    let query = 'UPDATE Reservation SET statut = ?, date_modification = NOW()';
+    let params = [statut];
+
+    if (message_agent) {
+      query += ', message_agent = ?';
+      params.push(message_agent);
+    }
+
+    query += ' WHERE id_reservation = ?';
+    params.push(id_reservation);
+
+    const [result] = await connection.execute(query, params);
+
+    if (result.affectedRows === 0) {
+      throw new Error('Réservation non trouvée');
+    }
+
+    // ✅ METTRE À JOUR LE STATUT DE LA PROPRIÉTÉ SELON LE STATUT DE LA RÉSERVATION
+    let nouveauStatutPropriete = 'disponible';
+    
+    switch(statut) {
+      case 'confirme':
+        nouveauStatutPropriete = 'reserve';
+        break;
+      case 'annule':
+        nouveauStatutPropriete = 'disponible';
+        break;
+      case 'termine':
+        nouveauStatutPropriete = 'disponible'; // Ou 'loué'/'vendu' selon le cas
+        break;
+      case 'refuse':
+        nouveauStatutPropriete = 'disponible';
+        break;
+    }
+
+    await connection.execute(
+      'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
+      [nouveauStatutPropriete, reservation.id_propriete]
+    );
+
+    console.log(`✅ Statut propriété mis à jour: ${nouveauStatutPropriete}`);
+
+    await connection.commit(); 
+    
+    // IMPORTANT: Retourner la réservation mise à jour AVEC TOUTES LES INFOS
+    const updatedReservation = await this.findById(id_reservation);
+    
+    // Ajouter les anciens et nouveaux statuts pour les notifications
+    updatedReservation.ancienStatut = ancienStatut;
+    updatedReservation.nouveauStatut = statut;
+    
+    console.log(`✅ Statut réservation mis à jour: ${ancienStatut} → ${statut}`);
+    
+    return updatedReservation;
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('❌ Erreur mise à jour statut:', error);
+    throw error;
+  } finally {
+    connection.release();
   }
+}
 
   // ✅ Annuler une réservation
   static async cancel(id_reservation, reason = '') {

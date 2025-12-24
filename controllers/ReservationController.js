@@ -1,16 +1,17 @@
 import { pool } from '../config/db.js';
 import Propriete from '../models/Propriete.js';
 import Reservation from '../models/Reservations.js';
+import { notifyOwnerNewReservation,notifyVisitorReservationRequest,notifyReservationStatusChange} from '../services/NotificationService.js';
 import User from '../models/Utilisateur.js';
 
 class ReservationController {
   
-  // ✅ CRÉATION SIMPLIFIÉE : Créer une réservation directement
+
   static async create(req, res) {
     console.log('📝 Création réservation simplifiée:', req.body);
     
     try {
-      const {
+      const { 
         id_utilisateur,
         id_propriete,
         date_visite,
@@ -67,7 +68,15 @@ class ReservationController {
       });
 
       // Récupérer les détails complets de la réservation créée
-      const newReservation = await Reservation.findById(reservationId);
+
+const newReservation = await Reservation.findById(reservationId);
+
+// Notifier le propriétaire
+ notifyOwnerNewReservation(newReservation);
+
+// Notifier le visiteur
+ notifyVisitorReservationRequest(newReservation);
+
 
       res.status(201).json({
         success: true,
@@ -296,38 +305,108 @@ class ReservationController {
       });
     }
   }
+ 
+// ✅ Mettre à jour le statut d'une réservation (pour les agents/admin)
+static async updateStatus(req, res) {
+  try {
+    const { id_reservation } = req.params;
+    const { statut, message_agent } = req.body;
 
-  // ✅ Mettre à jour le statut d'une réservation (pour les agents/admin)
-  static async updateStatus(req, res) {
+    console.log('=== DÉBUT MISE À JOUR STATUT ===');
+    console.log('📌 ID Réservation:', id_reservation);
+    console.log('📌 Nouveau statut demandé:', statut);
+    console.log('📌 Message agent:', message_agent);
+
+    // Validation du statut
+    const statutsValides = ['confirme', 'annule', 'termine', 'refuse'];
+    if (!statutsValides.includes(statut)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Statut invalide. Statuts autorisés: confirme, annule, termine, refuse'
+      });
+    }
+
+    // Récupérer la réservation avant mise à jour
+    const reservationBeforeUpdate = await Reservation.findById(id_reservation);
+    if (!reservationBeforeUpdate) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Réservation non trouvée.' 
+      });
+    }
+
+    const ancienStatut = reservationBeforeUpdate.statut;
+    console.log(`🔄 Changement statut: ${ancienStatut} → ${statut}`);
+
+    // Mettre à jour le statut dans la base de données
+    console.log('📝 Appel Reservation.updateStatus...');
+    const updatedReservation = await Reservation.updateStatus(id_reservation, statut, message_agent);
+    
+    if (!updatedReservation) {
+      throw new Error('Erreur lors de la mise à jour du statut');
+    }
+
+    console.log('✅ Statut mis à jour en BDD');
+
+    // Envoyer les notifications de changement de statut
+    console.log('📤 Début envoi notifications...');
+    
     try {
-      const { id_reservation } = req.params;
-      const { statut, message_agent } = req.body;
+      // DEBUG: Afficher ce qu'on envoie à la fonction de notification
+      console.log('🔍 Données pour notification:', {
+        reservationId: updatedReservation.id_reservation,
+        reservation: updatedReservation,
+        ancienStatut: ancienStatut,
+        nouveauStatut: statut,
+        message_agent: message_agent
+      });
 
-      const reservation = await Reservation.findById(id_reservation);
-      if (!reservation) {
-        return res.status(404).json({ 
-          success: false,
-          message: 'Réservation non trouvée.' 
-        });
-      }
+      // Appeler la fonction de notification avec les bons paramètres
+      const notificationResult = await notifyReservationStatusChange(
+        updatedReservation,    // Objet réservation complet
+        ancienStatut,          // Ancien statut
+        statut,                // Nouveau statut
+        message_agent          // Message optionnel
+      );
 
-      const updatedReservation = await Reservation.updateStatus(id_reservation, statut, message_agent);
+      console.log('📤 Résultat notifications:', notificationResult);
+      console.log('=== FIN MISE À JOUR STATUT ===');
 
+      // Réponse de succès
       res.status(200).json({ 
         success: true,
         message: 'Statut de réservation mis à jour avec succès.',
-        reservation: updatedReservation 
+        reservation: updatedReservation,
+        notifications: notificationResult,
+        statut_changement: `${ancienStatut} → ${statut}`
       });
 
-    } catch (error) {
-      console.error('❌ Erreur mise à jour statut réservation:', error);
-      res.status(500).json({ 
-        success: false,
-        message: 'Erreur lors de la mise à jour du statut de la réservation.',
-        error: error.message 
+    } catch (notifError) {
+      console.error('❌ Erreur lors de l\'envoi des notifications:', notifError);
+      console.error('❌ Détails erreur:', notifError.message);
+      console.error('❌ Stack trace:', notifError.stack);
+      
+      // Retourner quand même la réponse même si les notifications échouent
+      res.status(200).json({ 
+        success: true,
+        message: 'Statut mis à jour mais erreur lors des notifications.',
+        reservation: updatedReservation,
+        notification_error: notifError.message,
+        statut_changement: `${ancienStatut} → ${statut}`
       });
     }
+
+  } catch (error) {
+    console.error('❌ Erreur globale mise à jour statut réservation:', error);
+    console.error('❌ Stack trace:', error.stack);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors de la mise à jour du statut de la réservation.',
+      error: error.message,
+      stack: error.stack
+    });
   }
+}
 
   // ✅ Mettre à jour les notes d'une réservation
   static async updateNotes(req, res) {
@@ -451,6 +530,8 @@ class ReservationController {
       });
     }
   }
+
+
 }
 
-export default ReservationController;
+export default ReservationController; 
