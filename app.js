@@ -20,7 +20,7 @@ import PreferenceUtilisateurRoutes from './routes/PreferenceUtilisateurRoutes.js
 import { createUploadDirs, cleanOrphanedFiles } from './middlewares/upload.js';
 import multer from 'multer';    
 
-// ==================== CONFIGURATION ENVIRONNEMENT ====================
+//ok  ==================== CONFIGURATION ENVIRONNEMENT ====================
 dotenv.config();
 
 const app = express();
