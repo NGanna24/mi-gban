@@ -39,9 +39,92 @@ app.use(cors({
     credentials: true
 }));
 
+
+// Dans app.js, après app.use(cors(...)); (~ligne 50)
+app.use((req, res, next) => {
+    // Override res.json pour corriger les URLs HTTP en HTTPS
+    const originalJson = res.json;
+    res.json = function(data) {
+        if (data && typeof data === 'object') {
+            const convertUrls = (obj) => {
+                for (let key in obj) {
+                    if (typeof obj[key] === 'string' && obj[key].includes('http://n-double.com')) {
+                        obj[key] = obj[key].replace('http://', 'https://');
+                    } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                        convertUrls(obj[key]);
+                    }
+                }
+            };
+            convertUrls(data);
+        }
+        originalJson.call(this, data);
+    };
+    next();
+});
+
 // Middleware pour parser les requêtes JSON
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// ==================== MIDDLEWARES GLOBAUX ====================
+
+// Middleware pour forcer HTTPS en production
+app.use((req, res, next) => {
+    if (process.env.NODE_ENV === 'production' && 
+        req.headers['x-forwarded-proto'] !== 'https' &&
+        !req.originalUrl.includes('/health')) {
+        return res.redirect(`https://${req.headers.host}${req.url}`);
+    }
+    next();
+});
+
+// Configuration CORS spécifique pour votre domaine
+app.use(cors({
+    origin: function (origin, callback) {
+        // Autoriser les requêtes sans origine (apps mobiles)
+        if (!origin) return callback(null, true);
+        
+        // Liste des origines autorisées
+        const allowedOrigins = [
+            'https://n-double.com',
+            'https://www.n-double.com',
+            'http://n-double.com',
+            'http://www.n-double.com',
+            'exp://localhost:19000',    // Expo Go
+            'http://localhost:19006',    // Expo Web
+            'http://localhost:3000',     // Dev local
+            'http://72.62.93.68:8181'    // Votre IP VPS
+        ];
+        
+        if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS bloqué pour l'origine: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+        'Content-Type', 
+        'Authorization', 
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        'X-Auth-Token'
+    ],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    credentials: true,
+    maxAge: 86400
+}));
+
+// Middleware pour ajouter des headers de sécurité
+app.use((req, res, next) => {
+    res.setHeader('X-Powered-By', 'Immobilier API');
+    res.setHeader('X-API-Version', '1.0.0');
+    res.setHeader('X-Domain', 'n-double.com');
+    next();
+});
+
 
 // ==================== CONFIGURATION UPLOADS ====================
 
@@ -483,7 +566,7 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
 });
 
-// Démarrage du serveur
+
 startServer(); 
 
 export default app;

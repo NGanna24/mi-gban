@@ -167,7 +167,13 @@ class Agence {
         [id_suiveur, id_suivi_utilisateur],
         { useCache: true, cacheKey: `suivi:${id_suiveur}:${id_suivi_utilisateur}`, ttl: 30000 }
       );
-      return suivi.length > 0 ? suivi[0] : null;
+        // Vérifier si suivi est défini et a une longueur
+    if (suivi && Array.isArray(suivi) && suivi.length > 0) {
+      return suivi[0];
+    }
+    return null; 
+
+
     } catch (error) {
       console.error('Erreur vérification suivi:', error);
       throw error;
