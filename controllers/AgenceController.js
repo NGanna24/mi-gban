@@ -1326,7 +1326,7 @@ async updateReservationStatus(req, res) {
           `Statut réservation ${newStatus}`,
           `Votre réservation pour "${reservationData.propriete_titre}" est maintenant ${newStatus}.`,
           'reservation_status_change',
-          JSON.stringify({
+          JSON.stringify({ 
             reservation_id: id_reservation,
             old_status: oldStatus,
             new_status: newStatus,

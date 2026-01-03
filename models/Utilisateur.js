@@ -1,5 +1,5 @@
 import { pool } from '../config/db.js';
-import Profile from '../models/Profile.js'; // ✅ Import du modèle Profile
+import Profile from './Profile.js'; // ✅ Import du modèle Profile
 
 class User {  
   static async create({ fullname, telephone, role = 'client' }) {
