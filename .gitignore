@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+.DS_Store
+dist/
+*.log
+coverage/
+
+# Firebase
+config/firebase-adminsdk.json
+
+# Uploads
+uploads/
+
