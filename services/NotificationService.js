@@ -1,175 +1,38 @@
 import { pool } from '../config/db.js';
-import admin from 'firebase-admin';
+import { Expo } from 'expo-server-sdk';
 import Notification from '../models/Notification.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+
+// Créer une instance Expo
+const expo = new Expo();
 
 // ============================================================================
-// INITIALISATION FIREBASE ADMIN SDK
+// FONCTIONS DE NOTIFICATION PUSH 
 // ============================================================================
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Chemin du fichier de configuration Firebase
-const firebaseConfigPath = path.join(__dirname, '../config/firebase-adminsdk.json');
-
-console.log('🔍 Initialisation Firebase...');
-
-// Initialiser Firebase Admin SDK
-let firebaseApp;
-
-try {
-  if (!admin.apps.length) {
-    if (fs.existsSync(firebaseConfigPath)) {
-      console.log('✅ Fichier Firebase trouvé, chargement...');
-      
-      // Lire le fichier JSON
-      const serviceAccountContent = fs.readFileSync(firebaseConfigPath, 'utf8');
-      
-      try {
-        const serviceAccount = JSON.parse(serviceAccountContent);
-        console.log('📋 Infos Firebase:', {
-          project: serviceAccount.project_id,
-          email: serviceAccount.client_email
-        });
-
-        // Initialiser Firebase
-        firebaseApp = admin.initializeApp({
-          credential: admin.credential.cert({
-            projectId: serviceAccount.project_id,
-            privateKey: serviceAccount.private_key,
-            clientEmail: serviceAccount.client_email
-          }),
-          projectId: serviceAccount.project_id
-        });
-        
-        console.log('🎉 Firebase Admin SDK initialisé avec succès!');
-        
-      } catch (parseError) {
-        console.error('❌ Erreur parsing JSON:', parseError.message);
-        throw parseError;
-      }
-      
-    } else {
-      console.error('❌ Fichier Firebase non trouvé:', firebaseConfigPath);
-      throw new Error(`Fichier Firebase non trouvé: ${firebaseConfigPath}`);
-    }
-  } else {
-    firebaseApp = admin.app();
-    console.log('✅ Firebase déjà initialisé');
-  }
-} catch (error) {
-  console.error('❌ ERREUR initialisation Firebase:');
-  console.error('Message:', error.message);
-  
-  // Créer un mock pour le développement
-  console.warn('⚠️ Firebase non initialisé - mode développement activé');
-  
-  // Créer un objet mock pour éviter les erreurs
-  firebaseApp = {
-    messaging: () => ({
-      send: async () => {
-        console.log('📱 [DEV] Mock Firebase send');
-        return 'mock-message-id';
-      },
-      sendEach: async () => {
-        console.log('📱 [DEV] Mock Firebase sendEach');
-        return {
-          successCount: 0,
-          failureCount: 0,
-          responses: []
-        };
-      }
-    })
-  };
-}
-
-// ============================================================================
-// FONCTIONS DE NOTIFICATION PUSH - FIREBASE VERSION
-// ============================================================================
-
-/**
- * Vérifie si un token FCM est valide
- */
-const isValidFCMToken = (token) => {
-  if (!token || typeof token !== 'string') return false;
-  
-  // Formats FCM courants
-  const fcmPatterns = [
-    /^[a-zA-Z0-9_-]{11}:[a-zA-Z0-9_-]{140,}$/, // Format Android
-    /^[a-zA-Z0-9_-]{152,}$/, // Format général FCM
-    /^[0-9a-fA-F]{64}$/, // Format iOS
-  ];
-  
-  // Formats Expo (pour compatibilité)
-  const expoPattern = /^ExponentPushToken\[.*\]$/;
-  
-  return fcmPatterns.some(pattern => pattern.test(token)) || expoPattern.test(token);
-};
-
-/**
- * Envoie une notification push via Firebase
- */
-const sendPushNotification = async (fcmToken, titre, body, data = {}, userId = null, notificationType = 'systeme') => {
+const sendPushNotification = async (expoPushToken, titre, body, data = {}, userId = null, notificationType = 'systeme') => {
   try {
     // Vérifier que le token est valide
-    if (!fcmToken || !isValidFCMToken(fcmToken)) {
-      console.error(`❌ Token FCM invalide: ${fcmToken ? fcmToken.substring(0, 20) + '...' : 'null'}`);
-      return { success: false, error: 'Token FCM invalide' };
+    if (!Expo.isExpoPushToken(expoPushToken)) {
+      console.error(`❌ Token Expo invalide: ${expoPushToken}`);
+      return { success: false, error: 'Token invalide' };
     }
 
-    console.log('📤 Envoi notification FCM:', { 
-      token_preview: fcmToken.substring(0, 30) + '...',
-      titre, 
-      body,
-      userId
-    });
-
-    // Construire le message Firebase
+    // Construire le message
     const message = {
-      token: fcmToken,
-      notification: {
-        title: titre,
-        body: body,
-      },
-      data: {
-        ...data,
-        click_action: 'FLUTTER_NOTIFICATION_CLICK',
-        sound: 'default'
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: data.channelId || 'alertes-immobilieres',
-          sound: 'default',
-          vibrateTimingsMillis: [0, 500, 250, 500],
-          defaultLightSettings: true,
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            alert: {
-              title: titre,
-              body: body,
-            },
-            sound: 'default',
-            badge: 1,
-          },
-        },
-        headers: {
-          'apns-priority': '10',
-        },
-      },
+      to: expoPushToken,
+      sound: 'default',
+      titre: titre,
+      body: body,
+      data: data,
+      channelId: 'alertes-immobilieres'
     };
 
-    // Envoyer la notification via Firebase
-    console.log('🚀 Envoi via Firebase Cloud Messaging...');
-    const response = await admin.messaging().send(message);
+    console.log('📤 Envoi notification:', { to: expoPushToken, titre, body });
+
+    // Envoyer la notification
+    const tickets = await expo.sendPushNotificationsAsync([message]);
     
-    console.log('✅ Notification FCM envoyée avec succès, messageId:', response);
+    console.log('✅ Notification envoyée, ticket:', tickets[0]);
     
     // Enregistrement dans la base de données si userId est fourni
     if (userId) {
@@ -179,12 +42,7 @@ const sendPushNotification = async (fcmToken, titre, body, data = {}, userId = n
           titre: titre,
           message: body,
           type: notificationType,
-          metadata: JSON.stringify({
-            ...data,
-            fcmMessageId: response,
-            platform: 'fcm',
-            timestamp: new Date().toISOString()
-          })
+          metadata: JSON.stringify(data)
         });
         console.log('💾 Notification sauvegardée en BDD pour utilisateur:', userId);
       } catch (dbError) {
@@ -192,55 +50,28 @@ const sendPushNotification = async (fcmToken, titre, body, data = {}, userId = n
       }
     }
     
-    return { 
-      success: true, 
-      messageId: response,
-      platform: 'fcm'
-    };
+    return { success: true, ticket: tickets[0] };
 
   } catch (error) {
-    console.error('❌ Erreur envoi notification FCM:', error);
-    
-    // Gérer les erreurs spécifiques FCM
-    if (error.code === 'messaging/registration-token-not-registered') {
-      console.log('⚠️ Token non enregistré, nettoyage recommandé');
-      return { 
-        success: false, 
-        error: 'Token non enregistré',
-        code: 'TOKEN_NOT_REGISTERED',
-        shouldCleanup: true 
-      };
-    }
-    
-    return { 
-      success: false, 
-      error: error.message,
-      code: error.code || 'UNKNOWN_ERROR'
-    };
+    console.error('❌ Erreur envoi notification:', error);
+    return { success: false, error: error.message };
   }
 };
 
 /**
- * Envoie des notifications en lot via Firebase
+ * Envoie des notifications en lot
  */
 const sendBulkNotifications = async (notifications) => {
   try {
     const messages = notifications
-      .filter(notification => notification.fcmToken && isValidFCMToken(notification.fcmToken))
+      .filter(notification => Expo.isExpoPushToken(notification.expoPushToken))
       .map(notification => ({
-        token: notification.fcmToken,
-        notification: {
-          title: notification.titre,
-          body: notification.body,
-        },
+        to: notification.expoPushToken,
+        sound: 'default',
+        titre: notification.titre,
+        body: notification.body,
         data: notification.data || {},
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: notification.data?.channelId || 'alertes-immobilieres',
-            sound: 'default',
-          }
-        },
+        channelId: 'alertes-immobilieres'
       }));
 
     if (messages.length === 0) {
@@ -248,26 +79,12 @@ const sendBulkNotifications = async (notifications) => {
       return [];
     }
 
-    console.log(`📤 Envoi de ${messages.length} notifications en lot via FCM...`);
-    
-    // Firebase supporte l'envoi par lots
-    const response = await admin.messaging().sendEach(messages);
-    
-    console.log(`✅ ${response.successCount} notifications envoyées, ${response.failureCount} échecs`);
-    
-    // Analyser les échecs
-    if (response.failureCount > 0) {
-      response.responses.forEach((resp, index) => {
-        if (!resp.success) {
-          console.error(`❌ Échec notification ${index}:`, resp.error);
-        }
-      });
-    }
-    
-    return response.responses;
+    const tickets = await expo.sendPushNotificationsAsync(messages);
+    console.log(`✅ ${tickets.length} notifications envoyées en lot`);
+    return tickets;
 
   } catch (error) {
-    console.error('❌ Erreur envoi notifications en lot FCM:', error);
+    console.error('❌ Erreur envoi notifications en lot:', error);
     throw error;
   }
 };
@@ -634,7 +451,6 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
         slug: property.slug,
         alertId: userAlert.id_recherche,
         screen: 'property-details',
-        channelId: 'alertes-immobilieres',
         timestamp: new Date().toISOString()
       },
       priority: 'high'
@@ -653,7 +469,6 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
         slug: property.slug,
         alertId: userAlert.id_recherche,
         screen: 'property-details',
-        channelId: 'alertes-immobilieres',
         timestamp: new Date().toISOString()
       },
       priority: 'high'
@@ -670,7 +485,7 @@ const getActiveAlerts = async () => {
     
     const query = `
       SELECT r.id_recherche, r.id_utilisateur, r.criteres, r.nom_recherche,
-             u.expo_push_token as fcm_token, u.fullname
+             u.expo_push_token, u.fullname
       FROM Recherche r
       JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
       WHERE r.est_alerte_active = TRUE
@@ -682,11 +497,7 @@ const getActiveAlerts = async () => {
     const [alerts] = await pool.execute(query);
     console.log(`📊 ${alerts.length} alertes actives trouvées`);
     
-    // Renommer fcm_token pour compatibilité
-    return alerts.map(alert => ({
-      ...alert,
-      expo_push_token: alert.fcm_token
-    }));
+    return alerts;
     
   } catch (error) {
     console.error('❌ Erreur récupération alertes:', error);
@@ -700,20 +511,17 @@ const getActiveAlerts = async () => {
 const getAllUserPushTokens = async () => {
   try {
     const query = `
-      SELECT expo_push_token as fcm_token
+      SELECT expo_push_token 
       FROM Utilisateur 
       WHERE expo_push_token IS NOT NULL 
       AND expo_push_token != ''
       AND est_actif = TRUE
-      AND LENGTH(expo_push_token) > 10
     `;
     
     const [users] = await pool.execute(query);
-    const tokens = users
-      .map(user => user.fcm_token)
-      .filter(token => token !== null && isValidFCMToken(token));
+    const tokens = users.map(user => user.expo_push_token).filter(token => token !== null);
     
-    console.log(`📋 ${tokens.length} tokens FCM récupérés depuis la base de données`);
+    console.log(`📋 ${tokens.length} tokens récupérés depuis la base de données`);
     return tokens;
     
   } catch (error) {
@@ -762,7 +570,6 @@ const prepareNewPropertyNotification = (property) => {
       propertyId: property.id_propriete,
       slug: property.slug,
       screen: 'property-details',
-      channelId: 'alertes-immobilieres',
       timestamp: new Date().toISOString()
     }
   };
@@ -919,7 +726,7 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
 };
 
 /**
- * Envoie des notifications en lot via Firebase
+ * Envoie des notifications en lot via Expo
  */
 const sendBulkNotificationsExpo = async (tokens, notification) => {
   try {
@@ -927,135 +734,97 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     let validTokens = 0;
     let invalidTokens = 0;
     
-    console.log(`📤 Préparation de ${tokens.length} notifications FCM...`);
+    console.log(`📤 Préparation de ${tokens.length} notifications...`);
 
     // Préparer les messages pour chaque token valide
     for (const token of tokens) {
-      if (!isValidFCMToken(token)) {
-        console.log(`❌ Token FCM invalide ignoré: ${token.substring(0, 20)}...`);
+      if (!Expo.isExpoPushToken(token)) {
+        console.log(`❌ Token invalide ignoré: ${token.substring(0, 20)}...`);
         invalidTokens++;
         continue;
       }
       
       messages.push({
-        token: token,
-        notification: {
-          title: notification.titre,
-          body: notification.body,
-        },
-        data: notification.data || {},
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: notification.data?.channelId || 'default',
-            sound: 'default',
-          }
-        },
+        to: token,
+        sound: 'default',
+        titre: notification.titre,
+        body: notification.body,
+        data: notification.data,
+        channelId: 'default',
+        priority: 'high',
       });
       
       validTokens++;
     }
     
-    console.log(`✅ ${validTokens} tokens FCM valides, ❌ ${invalidTokens} tokens invalides`);
+    console.log(`✅ ${validTokens} tokens valides, ❌ ${invalidTokens} tokens invalides`);
     
     if (messages.length === 0) {
       console.log('ℹ️ Aucun message valide à envoyer');
       return [];
     }
     
-    // Firebase gère automatiquement le batch
-    const BATCH_SIZE = 500;
-    const batches = [];
-    
-    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
-      batches.push(messages.slice(i, i + BATCH_SIZE));
-    }
-    
+    // Envoi par chunks de 100 (limitation Expo)
+    const chunks = expo.chunkPushNotifications(messages);
+    const tickets = [];
     let totalSent = 0;
-    const allResponses = [];
     
-    console.log(`🔄 Découpage en ${batches.length} lot(s) de notifications...`);
+    console.log(`🔄 Découpage en ${chunks.length} lot(s) de notifications...`);
     
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
       try {
-        console.log(`📨 Envoi du lot ${i + 1}/${batches.length} (${batch.length} notifications)...`);
-        const response = await admin.messaging().sendEach(batch);
-        allResponses.push(...response.responses);
-        totalSent += response.successCount;
+        console.log(`📨 Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+        totalSent += chunk.length;
         
-        console.log(`✅ Lot ${i + 1} envoyé: ${response.successCount} réussites, ${response.failureCount} échecs`);
+        console.log(`✅ Lot ${i + 1} envoyé avec succès (${chunk.length} notifications)`);
       } catch (error) {
         console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
       }
     }
     
-    console.log(`🎉 ${totalSent} notifications FCM envoyées au total`);
+    console.log(`🎉 ${totalSent} notifications envoyées au total`);
     
-    return allResponses;
+    return tickets;
     
   } catch (error) {
-    console.error('❌ Erreur envoi notifications FCM:', error);
+    console.error('❌ Erreur envoi notifications:', error);
     throw error;
   }
 };
 
 /**
- * Notifie un utilisateur spécifique via Firebase
+ * Notifie un utilisateur spécifique
  */
 const notifySingleUser = async (userToken, notification) => {
   try {
-    if (!userToken || !isValidFCMToken(userToken)) {
-      console.log('❌ Token FCM utilisateur invalide');
-      return { success: false, message: 'Token FCM invalide' };
+    if (!Expo.isExpoPushToken(userToken)) {
+      console.log('❌ Token utilisateur invalide');
+      return { success: false, message: 'Token invalide' };
     }
 
     const message = {
-      token: userToken,
-      notification: {
-        title: notification.titre,
-        body: notification.body,
-      },
-      data: notification.data || {},
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: notification.data?.channelId || 'default',
-          sound: 'default',
-          vibrateTimingsMillis: [0, 500, 250, 500],
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            alert: {
-              title: notification.titre,
-              body: notification.body,
-            },
-            sound: 'default',
-            badge: 1,
-          },
-        },
-      },
+      to: userToken,
+      sound: 'default',
+      titre: notification.titre,
+      body: notification.body,
+      data: notification.data,
+      channelId: 'default',
+      priority: notification.priority || 'high',
     };
 
-    const response = await admin.messaging().send(message);
+    const ticket = await expo.sendPushNotificationsAsync([message]);
     
-    console.log(`✅ Notification FCM personnalisée envoyée: ${notification.titre}, ID: ${response}`);
-    return { 
-      success: true, 
-      messageId: response,
-      platform: 'fcm'
-    };
+    console.log(`✅ Notification personnalisée envoyée: ${notification.titre}`);
+    return { success: true, ticket: ticket[0] };
     
   } catch (error) {
-    console.error('❌ Erreur notification utilisateur FCM:', error);
-    return { 
-      success: false, 
-      message: error.message,
-      code: error.code 
-    };
+    console.error('❌ Erreur notification utilisateur:', error);
+    return { success: false, message: error.message };
   }
+  
 };
 
 /**
@@ -1149,7 +918,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
           console.log(`   Body: ${notification.body}`);
           console.log(`   Data:`, notification.data);
           
-          // Envoyer la notification push via Firebase
+          // Envoyer la notification push
           const result = await notifySingleUser(userAlert.expo_push_token, notification);
           
           if (result.success) {
@@ -1225,22 +994,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
       ville: property.ville
     });
 
-    // 1. 📱 Notifications push générales via Firebase
-    console.log('📤 Étape 1: Notifications push générales via Firebase...');
-    const allTokens = await getAllUserPushTokens();
-    let pushTickets = [];
-    
-    if (allTokens.length > 0) {
-      const notification = prepareNewPropertyNotification(property);
-      pushTickets = await sendBulkNotificationsExpo(allTokens, notification);
-      console.log(`📤 ${pushTickets.filter(t => t.success).length}/${allTokens.length} notifications push envoyées`);
-    } else {
-      console.log('ℹ️ Aucun token FCM valide pour les notifications générales');
-    }
-
-    // 2. 💾 Sauvegarde en base de données
-    console.log('💾 Étape 2: Sauvegarde notifications en BDD...');
-    const bddResult = await saveNotificationsToDatabase(property);
+    // 1. 📱 Notificatit = await saveNotificationsToDatabase(property);
 
     // 3. 🎯 NOTIFICATIONS PAR ALERTES PERSONNALISÉES
     console.log('🎯 Étape 3: Notifications par alertes personnalisées...');
@@ -1248,18 +1002,20 @@ const notifyAllUsersAboutNewProperty = async (property) => {
 
     const result = {
       success: true,
-      platform: 'firebase',
-      general_push_sent: allTokens.length,
+      // Notifications générales
+      general_push_sent: pushTickets.length,
       general_bdd_saved: bddResult.saved,
       general_bdd_count: bddResult.count,
+      // Notifications alertes
       alerts_checked: alertResult.alerts_checked,
       alerts_matched: alertResult.alerts_matched,
       alerts_notified: alertResult.users_notified,
+      // Totaux
       total_users: bddResult.total,
-      total_notifications: allTokens.length + alertResult.users_notified
+      total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    console.log('🎉🎉🎉 NOTIFICATION COMPLÈTE TERMINÉE (FIREBASE) 🎉🎉🎉');
+    console.log('🎉🎉🎉 NOTIFICATION COMPLÈTE TERMINÉE 🎉🎉🎉');
     console.log('📊 Résultat final:', result);
 
     return result;
@@ -1270,7 +1026,6 @@ const notifyAllUsersAboutNewProperty = async (property) => {
     
     return {
       success: false,
-      platform: 'firebase',
       message: 'Erreur lors de la notification',
       error: error.message,
       general_push_sent: 0,
@@ -1278,6 +1033,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
     };
   }
 };
+
 
 const getReservationDetails = async (id_reservation) => {
   try {
@@ -1351,6 +1107,7 @@ const getReservationDetails = async (id_reservation) => {
   }
 };
 
+
 const notifyOwnerNewReservation = async (reservation) => {
   try {
     console.log('📅 Notification nouvelle réservation au propriétaire:', reservation);
@@ -1386,7 +1143,7 @@ const notifyOwnerNewReservation = async (reservation) => {
     
     // 3. Vérifier le token
     const proprietaire_token = proprietaire.proprietaire_token;
-    if (!proprietaire_token || !isValidFCMToken(proprietaire_token)) {
+    if (!proprietaire_token || !Expo.isExpoPushToken(proprietaire_token)) {
       console.log(`❌ Token propriétaire invalide ou manquant pour ${proprietaire.proprietaire_nom}`);
       return { success: false, error: 'Token propriétaire invalide' };
     }
@@ -1402,11 +1159,10 @@ const notifyOwnerNewReservation = async (reservation) => {
       status: reservation.statut,
       action: 'view_reservation',
       screen: 'reservation-details',
-      channelId: 'alertes-immobilieres',
       timestamp: new Date().toISOString()
     };
 
-    // 5. Envoyer la notification via Firebase
+    // 5. Envoyer la notification
     const result = await sendPushNotification(
       proprietaire_token, 
       titre, 
@@ -1440,7 +1196,7 @@ const notifyVisitorReservationRequest = async (reservation) => {
 
     const { visiteur_token, visiteur_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
 
-    if (!visiteur_token || !isValidFCMToken(visiteur_token)) {
+    if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
       console.log(`❌ Token visiteur invalide ou manquant pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
@@ -1455,7 +1211,6 @@ const notifyVisitorReservationRequest = async (reservation) => {
       status: reservation.statut,
       action: 'view_reservation',
       screen: 'reservation-details',
-      channelId: 'alertes-immobilieres',
       timestamp: new Date().toISOString()
     };
 
@@ -1544,7 +1299,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       statut_actuel: reservationDetails.statut
     });
 
-    // Récupérer les tokens
+    // Récupérer les tokens (assurez-vous qu'ils existent dans les résultats de la requête)
     const { 
       proprietaire_token, 
       proprietaire_nom, 
@@ -1563,7 +1318,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT'
     });
 
-    // Messages personnalisés selon le statut
+    // Messages personnalisés selon le statut (garder votre code existant)
     const statusMessages = {
       'confirme': {
         owner: {
@@ -1629,7 +1384,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     const sentNotifications = [];
 
     // 1. Notification au PROPRIÉTAIRE
-    if (proprietaire_token && isValidFCMToken(proprietaire_token)) {
+    if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
       console.log(`📤 Notification au propriétaire ${proprietaire_nom}...`);
       
       const ownerData = {
@@ -1640,7 +1395,6 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
         newStatus: newStatus,
         action: 'view_reservation',
         screen: 'reservation-details',
-        channelId: 'alertes-immobilieres',
         timestamp: new Date().toISOString(),
         role: 'owner'
       };
@@ -1666,7 +1420,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     }
 
     // 2. Notification au VISITEUR
-    if (visiteur_token && isValidFCMToken(visiteur_token)) {
+    if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
       console.log(`📤 Notification au visiteur ${visiteur_nom}...`);
       
       const visitorData = {
@@ -1677,7 +1431,6 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
         newStatus: newStatus,
         action: 'view_reservation',
         screen: 'reservation-details',
-        channelId: 'alertes-immobilieres',
         timestamp: new Date().toISOString(),
         role: 'visitor'
       };
@@ -1745,7 +1498,7 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
 
     const { visiteur_token, visiteur_nom, proprietaire_nom, propriete_titre } = reservationDetails;
 
-    if (!visiteur_token || !isValidFCMToken(visiteur_token)) {
+    if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
       console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
@@ -1759,7 +1512,6 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       propertyId: reservationDetails.id_propriete,
       action: 'view_reservation',
       screen: 'reservation-details',
-      channelId: 'alertes-immobilieres',
       timestamp: new Date().toISOString()
     };
 
@@ -1807,7 +1559,7 @@ const notifyVisitReminder = async (reservationId) => {
 
     const { visiteur_token, visiteur_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
 
-    if (!visiteur_token || !isValidFCMToken(visiteur_token)) {
+    if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
       console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
@@ -1821,7 +1573,6 @@ const notifyVisitReminder = async (reservationId) => {
       propertyId: reservationDetails.id_propriete,
       action: 'view_reservation',
       screen: 'reservation-details',
-      channelId: 'alertes-immobilieres',
       timestamp: new Date().toISOString()
     };
 
@@ -1854,51 +1605,12 @@ const notifyVisitReminder = async (reservationId) => {
   }
 };
 
-/**
- * Nettoyage des tokens invalides
- */
-const cleanupInvalidTokens = async () => {
-  try {
-    const query = `
-      SELECT id_utilisateur, expo_push_token 
-      FROM Utilisateur 
-      WHERE expo_push_token IS NOT NULL 
-      AND expo_push_token != ''
-    `;
-    
-    const [users] = await pool.execute(query);
-    let cleanedCount = 0;
-    
-    for (const user of users) {
-      const token = user.expo_push_token;
-      
-      // Vérifier si le token est valide
-      if (!isValidFCMToken(token)) {
-        // Token invalide, on le nettoie
-        await pool.execute(
-          'UPDATE Utilisateur SET expo_push_token = NULL WHERE id_utilisateur = ?',
-          [user.id_utilisateur]
-        );
-        cleanedCount++;
-        console.log(`🧹 Token invalide nettoyé pour utilisateur ${user.id_utilisateur}`);
-      }
-    }
-    
-    console.log(`✅ Nettoyage terminé: ${cleanedCount} tokens invalides nettoyés`);
-    return { cleanedCount };
-    
-  } catch (error) {
-    console.error('❌ Erreur nettoyage tokens:', error);
-    return { cleanedCount: 0, error: error.message };
-  }
-};
-
 // ============================================================================
-// EXPORTS
+// EXPORTS CORRIGÉS - AVEC sendPushNotification
 // ============================================================================
 
 export {
-  sendPushNotification,
+  sendPushNotification, // ✅ AJOUTÉ
   sendBulkNotifications,
   getAllUserPushTokens,
   notifyAllUsersAboutNewProperty,
@@ -1911,12 +1623,10 @@ export {
   notifyReservationStatusChange,
   notifyVisitorOwnerMessage,
   notifyVisitReminder,
-  isValidFCMToken,
-  cleanupInvalidTokens,
 };
 
 export default {
-  sendPushNotification,
+  sendPushNotification, 
   sendBulkNotifications,
   getAllUserPushTokens,
   notifyAllUsersAboutNewProperty,
@@ -1928,7 +1638,5 @@ export default {
   notifyVisitorReservationRequest,
   notifyReservationStatusChange,
   notifyVisitorOwnerMessage,
-  notifyVisitReminder,
-  isValidFCMToken,
-  cleanupInvalidTokens
+  notifyVisitReminder
 };

@@ -2068,7 +2068,7 @@ async modifierPropriete(req, res) {
           }
 
           return proprietes.map(propriete => {
-            try {
+            try { 
               if (!propriete) return null;
 
               // Formater les médias avec URLs complètes
