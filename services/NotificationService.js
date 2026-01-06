@@ -2,76 +2,177 @@ import { pool } from '../config/db.js';
 import { Expo } from 'expo-server-sdk';
 import Notification from '../models/Notification.js';
 
-// Créer une instance Expo
-const expo = new Expo();
-
 // ============================================================================
-// FONCTIONS DE NOTIFICATION PUSH 
+// INITIALISATION EXPO
 // ============================================================================
 
-const sendPushNotification = async (expoPushToken, titre, body, data = {}, userId = null, notificationType = 'systeme') => {
+const expo = new Expo({
+  // Optionnel: timeout en ms
+  accessToken: process.env.EXPO_ACCESS_TOKEN,
+  useFcmV1: true // Utilise FCM v1 (recommandé)
+});
+
+// ============================================================================
+// FONCTIONS DE NOTIFICATION PUSH EXPO
+// ============================================================================
+
+/**
+ * Envoie une notification push via Expo
+ */
+const sendPushNotification = async (expoPushToken, title, body, data = {}, userId = null, notificationType = 'system') => {
   try {
-    // Vérifier que le token est valide
-    if (!Expo.isExpoPushToken(expoPushToken)) {
-      console.error(`❌ Token Expo invalide: ${expoPushToken}`);
-      return { success: false, error: 'Token invalide' };
+    // 1. Vérifier que le token est valide pour Expo
+    if (!expoPushToken) {
+      console.error('❌ Token manquant');
+      return { success: false, error: 'Token manquant' };
     }
 
-    // Construire le message
+    if (!Expo.isExpoPushToken(expoPushToken)) {
+      console.error(`❌ Token Expo invalide: ${expoPushToken?.substring(0, 30)}...`);
+      return { success: false, error: 'Token Expo invalide' };
+    }
+
+    // 2. Construire le message Expo
     const message = {
       to: expoPushToken,
       sound: 'default',
-      titre: titre,
+      title: title, // ✅ "title" en anglais pour Expo
       body: body,
       data: data,
-      channelId: 'alertes-immobilieres'
+      channelId: 'alertes-immobilieres',
+      priority: 'high',
+      _displayInForeground: true // Afficher même quand l'app est ouverte
     };
 
-    console.log('📤 Envoi notification:', { to: expoPushToken, titre, body });
+    console.log('📤 Envoi notification Expo:', { 
+      token: expoPushToken.substring(0, 20) + '...',
+      title,
+      body 
+    });
 
-    // Envoyer la notification
+    // 3. Envoyer via Expo
     const tickets = await expo.sendPushNotificationsAsync([message]);
-    
-    console.log('✅ Notification envoyée, ticket:', tickets[0]);
-    
-    // Enregistrement dans la base de données si userId est fourni
-    if (userId) {
-      try {
-        await Notification.create({
-          id_utilisateur: userId,
-          titre: titre,
-          message: body,
-          type: notificationType,
-          metadata: JSON.stringify(data)
-        });
-        console.log('💾 Notification sauvegardée en BDD pour utilisateur:', userId);
-      } catch (dbError) {
-        console.error('⚠️ Erreur sauvegarde BDD:', dbError);
+    const ticket = tickets[0];
+
+    console.log('✅ Ticket Expo reçu:', ticket);
+
+    // 4. Analyser la réponse
+    if (ticket.status === 'ok') {
+      console.log('✅ Notification envoyée avec succès via Expo');
+      
+      // 5. Sauvegarder en BDD si userId fourni
+      if (userId) {
+        try {
+          await Notification.create({
+            id_utilisateur: userId,
+            titre: title, // Sauvegarde en français dans BDD
+            message: body,
+            type: notificationType,
+            metadata: JSON.stringify(data)
+          });
+          console.log('💾 Notification sauvegardée en BDD pour utilisateur:', userId);
+        } catch (dbError) {
+          console.error('⚠️ Erreur sauvegarde BDD:', dbError);
+        }
       }
+      
+      return { 
+        success: true, 
+        ticket: ticket,
+        platform: 'expo',
+        messageId: ticket.id
+      };
+
+    } else {
+      // Gestion des erreurs Expo
+      console.error('❌ Erreur Expo:', ticket.message, ticket.details);
+      
+      // Erreurs spécifiques
+      if (ticket.details?.error === 'DeviceNotRegistered' || 
+          ticket.details?.error === 'InvalidCredentials') {
+        
+        console.error('🔧 Action requise:');
+        console.error('1. Pour "DeviceNotRegistered": Le token est invalide, supprimez-le');
+        console.error('2. Pour "InvalidCredentials": Configurez FCM dans dashboard.expo.dev');
+        
+        return { 
+          success: false, 
+          error: ticket.message,
+          code: ticket.details.error,
+          shouldCleanup: ticket.details.error === 'DeviceNotRegistered'
+        };
+      }
+      
+      return { 
+        success: false, 
+        error: ticket.message,
+        details: ticket.details 
+      };
     }
-    
-    return { success: true, ticket: tickets[0] };
 
   } catch (error) {
-    console.error('❌ Erreur envoi notification:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Erreur générale envoi notification:', error);
+    
+    // Guide pour les erreurs de configuration
+    if (error.message.includes('FCM') || error.message.includes('credentials')) {
+      console.error(`
+❌❌❌ CONFIGURATION REQUISE ❌❌❌
+
+Pour les notifications Android via Expo:
+
+OPTION 1 - Avec EAS Build:
+1. Créez un projet Firebase: console.firebase.google.com
+2. Téléchargez google-services.json
+3. Placez-le à la racine de votre projet
+4. Dans eas.json:
+   {
+     "build": {
+       "preview": {
+         "android": {
+           "googleServicesFile": "./google-services.json"
+         }
+       }
+     }
+   }
+
+OPTION 2 - Sans EAS:
+1. Allez sur: https://expo.dev/notifications
+2. Sélectionnez votre projet
+3. Cliquez sur "Configure FCM"
+4. Suivez les instructions
+      `);
+    }
+    
+    return { 
+      success: false, 
+      error: error.message,
+      code: error.code || 'UNKNOWN_ERROR'
+    };
   }
 };
 
 /**
- * Envoie des notifications en lot
+ * Envoie des notifications en lot via Expo
  */
 const sendBulkNotifications = async (notifications) => {
   try {
+    // Filtrer et préparer les messages valides
     const messages = notifications
-      .filter(notification => Expo.isExpoPushToken(notification.expoPushToken))
+      .filter(notification => {
+        const isValid = Expo.isExpoPushToken(notification.expoPushToken);
+        if (!isValid) {
+          console.log(`⚠️ Token invalide ignoré: ${notification.expoPushToken?.substring(0, 20)}...`);
+        }
+        return isValid;
+      })
       .map(notification => ({
         to: notification.expoPushToken,
         sound: 'default',
-        titre: notification.titre,
+        title: notification.title || notification.titre, // Support les deux formats
         body: notification.body,
         data: notification.data || {},
-        channelId: 'alertes-immobilieres'
+        channelId: 'alertes-immobilieres',
+        priority: 'high'
       }));
 
     if (messages.length === 0) {
@@ -79,9 +180,26 @@ const sendBulkNotifications = async (notifications) => {
       return [];
     }
 
-    const tickets = await expo.sendPushNotificationsAsync(messages);
-    console.log(`✅ ${tickets.length} notifications envoyées en lot`);
-    return tickets;
+    console.log(`📤 Envoi de ${messages.length} notifications en lot...`);
+
+    // Découper en chunks (Expo recommande max 100)
+    const chunks = expo.chunkPushNotifications(messages);
+    const allTickets = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        console.log(`🔄 Envoi lot ${i + 1}/${chunks.length} (${chunks[i].length} notifications)...`);
+        const tickets = await expo.sendPushNotificationsAsync(chunks[i]);
+        allTickets.push(...tickets);
+        console.log(`✅ Lot ${i + 1} envoyé`);
+      } catch (error) {
+        console.error(`❌ Erreur lot ${i + 1}:`, error);
+        // Continuer avec les lots suivants
+      }
+    }
+
+    console.log(`🎉 ${allTickets.length} tickets reçus au total`);
+    return allTickets;
 
   } catch (error) {
     console.error('❌ Erreur envoi notifications en lot:', error);
@@ -89,8 +207,88 @@ const sendBulkNotifications = async (notifications) => {
   }
 };
 
+/**
+ * Version améliorée pour les notifications en masse
+ */
+const sendBulkNotificationsExpo = async (tokens, notification) => {
+  try {
+    const messages = [];
+    let validTokens = 0;
+    let invalidTokens = 0;
+    
+    console.log(`📤 Préparation de ${tokens.length} notifications...`);
+
+    // Préparer les messages pour chaque token valide
+    for (const token of tokens) {
+      if (!token) {
+        invalidTokens++;
+        continue;
+      }
+
+      if (!Expo.isExpoPushToken(token)) {
+        console.log(`⚠️ Token invalide ignoré: ${token.substring(0, 20)}...`);
+        invalidTokens++;
+        continue;
+      }
+      
+      messages.push({
+        to: token,
+        sound: 'default',
+        title: notification.title || notification.titre,
+        body: notification.body,
+        data: notification.data || {},
+        channelId: 'default',
+        priority: 'high',
+      });
+      
+      validTokens++;
+    }
+    
+    console.log(`✅ ${validTokens} tokens valides, ❌ ${invalidTokens} tokens invalides`);
+    
+    if (messages.length === 0) {
+      console.log('ℹ️ Aucun message valide à envoyer');
+      return [];
+    }
+    
+    // Envoi par chunks (limitation Expo)
+    const chunks = expo.chunkPushNotifications(messages);
+    const tickets = [];
+    let totalSent = 0;
+    
+    console.log(`🔄 Découpage en ${chunks.length} lot(s) de notifications...`);
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      try {
+        console.log(`📨 Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+        totalSent += chunk.length;
+        
+        console.log(`✅ Lot ${i + 1} envoyé avec succès`);
+        
+        // Petite pause entre les lots pour éviter le rate limiting
+        if (i < chunks.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
+      }
+    }
+    
+    console.log(`🎉 ${totalSent} notifications envoyées au total`);
+    
+    return tickets;
+    
+  } catch (error) {
+    console.error('❌ Erreur envoi notifications:', error);
+    throw error;
+  }
+};
+
 // ============================================================================
-// FONCTIONS EXISTANTES (À GARDER)
+// FONCTIONS UTILITAIRES (inchangées mais vérifiées)
 // ============================================================================
 
 /**
@@ -230,7 +428,7 @@ const formatCaracteristiques = (caracteristiques) => {
 };
 
 /**
- * Calcule la similarité entre deux chaînes (algorithme simplifié)
+ * Calcule la similarité entre deux chaînes
  */
 const calculateSimilarity = (str1, str2) => {
   if (str1 === str2) return 1.0;
@@ -239,12 +437,10 @@ const calculateSimilarity = (str1, str2) => {
   const longer = str1.length > str2.length ? str1 : str2;
   const shorter = str1.length > str2.length ? str2 : str1;
   
-  // Si une chaîne est contenue dans l'autre, similarité élevée
   if (longer.includes(shorter)) {
     return shorter.length / longer.length;
   }
   
-  // Calcul simple de similarité basé sur les caractères communs
   const maxLength = Math.max(str1.length, str2.length);
   let matches = 0;
   
@@ -260,7 +456,6 @@ const calculateSimilarity = (str1, str2) => {
  */
 const propertyMatchesCriteria = (property, criteria) => {
   try {
-    // ✅ CORRECTION: Gérer les critères qui peuvent être string ou objet
     let criteres;
     if (typeof criteria === 'string') {
       try {
@@ -275,57 +470,49 @@ const propertyMatchesCriteria = (property, criteria) => {
     
     console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, criteres);
 
-    // ✅ NORMALISATION DES NOMS POUR MEILLEURE CORRESPONDANCE
     const normalizeText = (text) => {
       if (!text) return '';
       return text
         .toLowerCase()
         .trim()
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Supprime les accents
-        .replace(/[^a-z0-9]/g, ' ') // Remplace la ponctuation par des espaces
-        .replace(/\s+/g, ' ') // Supprime les espaces multiples
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]/g, ' ')
+        .replace(/\s+/g, ' ')
         .trim();
     };
 
-    // ✅ CRITÈRE OBLIGATOIRE: La ville doit correspondre (VERSION FLEXIBLE)
+    // ✅ CRITÈRE OBLIGATOIRE: La ville
     if (criteres.ville && property.ville) {
       const villeRecherche = normalizeText(criteres.ville);
       const villePropriete = normalizeText(property.ville);
       
-      // Recherche partielle plus flexible
       const villeMatch = villePropriete.includes(villeRecherche) || 
                         villeRecherche.includes(villePropriete) ||
                         calculateSimilarity(villePropriete, villeRecherche) > 0.7;
       
       if (!villeMatch) {
         console.log(`❌ Ville ne correspond pas: ${criteres.ville} vs ${property.ville}`);
-        console.log(`🔍 Normalisé: ${villeRecherche} vs ${villePropriete}`);
         return false;
       }
       console.log(`✅ Ville correspond: ${criteres.ville} vs ${property.ville}`);
     } else {
-      // Si aucune ville n'est spécifiée dans les critères, on n'envoie pas de notification
-      console.log(`❌ Aucune ville spécifiée dans les critères - notification non envoyée`);
+      console.log(`❌ Aucune ville spécifiée dans les critères`);
       return false;
     }
 
-    // ✅ Vérifier le type de transaction
+    // Vérifier le type de transaction
     if (criteres.type_transaction && criteres.type_transaction !== property.type_transaction) {
       console.log(`❌ Type transaction ne correspond pas: ${criteres.type_transaction} vs ${property.type_transaction}`);
       return false;
-    } else {
-      console.log(`✅ Type transaction OK: ${property.type_transaction}`);
     }
 
-    // ✅ Vérifier le type de propriété
+    // Vérifier le type de propriété
     if (criteres.type_propriete && criteres.type_propriete !== property.type_propriete) {
       console.log(`❌ Type propriété ne correspond pas: ${criteres.type_propriete} vs ${property.type_propriete}`);
       return false;
-    } else {
-      console.log(`✅ Type propriété OK: ${property.type_propriete}`);
     }
 
-    // ✅ Vérifier le quartier (optionnel - matching flexible)
+    // Vérifier le quartier
     if (criteres.quartier && property.quartier) {
       const quartierRecherche = normalizeText(criteres.quartier);
       const quartierPropriete = normalizeText(property.quartier);
@@ -336,15 +523,11 @@ const propertyMatchesCriteria = (property, criteria) => {
       
       if (!quartierMatch) {
         console.log(`❌ Quartier ne correspond pas: ${criteres.quartier} vs ${property.quartier}`);
-        console.log(`🔍 Normalisé: ${quartierRecherche} vs ${quartierPropriete}`);
         return false;
       }
-      console.log(`✅ Quartier correspond: ${criteres.quartier} vs ${property.quartier}`);
-    } else {
-      console.log(`ℹ️ Aucun quartier spécifié ou à vérifier`);
     }
 
-    // ✅ Vérifier le prix minimum
+    // Vérifier le prix minimum
     if (criteres.minPrice && property.prix) {
       const prixMin = parseFloat(criteres.minPrice);
       const prixPropriete = parseFloat(property.prix);
@@ -353,10 +536,9 @@ const propertyMatchesCriteria = (property, criteria) => {
         console.log(`❌ Prix trop bas: ${prixPropriete} < ${prixMin}`);
         return false;
       }
-      console.log(`✅ Prix min OK: ${prixPropriete} >= ${prixMin}`);
     }
 
-    // ✅ Vérifier le prix maximum
+    // Vérifier le prix maximum
     if (criteres.maxPrice && property.prix) {
       const prixMax = parseFloat(criteres.maxPrice);
       const prixPropriete = parseFloat(property.prix);
@@ -365,15 +547,12 @@ const propertyMatchesCriteria = (property, criteria) => {
         console.log(`❌ Prix trop élevé: ${prixPropriete} > ${prixMax}`);
         return false;
       }
-      console.log(`✅ Prix max OK: ${prixPropriete} <= ${prixMax}`);
     }
 
-    // ✅ Vérifier le statut
+    // Vérifier le statut
     if (criteres.statut && criteres.statut !== property.statut) {
       console.log(`❌ Statut ne correspond pas: ${criteres.statut} vs ${property.statut}`);
       return false;
-    } else {
-      console.log(`✅ Statut OK: ${property.statut}`);
     }
 
     console.log(`🎉 PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
@@ -386,26 +565,37 @@ const propertyMatchesCriteria = (property, criteria) => {
 };
 
 /**
+ * Formate la date pour les notifications
+ */
+const formatDateForDisplay = (dateString) => {
+  try {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('fr-FR', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  } catch (error) {
+    return dateString;
+  }
+};
+
+/**
  * Prépare la notification PERSONNALISÉE pour une alerte
  */
 const preparePersonalizedAlertNotification = async (property, userAlert, userProfile) => {
   try {
-    // Récupérer les caractéristiques de la propriété
     const caracteristiques = await getCaracteristiquesPrincipales(property.id_propriete);
     const caracteristiquesFormatees = formatCaracteristiques(caracteristiques);
     
-    // Formater le prix
     const prixFormate = formatPropertyPrice(property);
-    
-    // Formater le type de propriété en français
     const typeProprieteFormate = formatTypePropriete(property.type_propriete);
     
-    // Récupérer les critères de l'alerte
     const criteres = typeof userAlert.criteres === 'string' ? 
       JSON.parse(userAlert.criteres) : userAlert.criteres;
     
-    // Construire le message personnalisé
-    const nomUtilisateur = userProfile?.fullname?.split(' ')[0] || ''; // Premier prénom seulement
+    const nomUtilisateur = userProfile?.fullname?.split(' ')[0] || '';
     
     let messageBody = '';
     
@@ -415,35 +605,29 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
       messageBody = `Bonnes nouvelles ! 🎉\n`;
     }
     
-    // Ajouter le type de propriété
     messageBody += `Un${typeProprieteFormate.startsWith('a') || typeProprieteFormate.startsWith('e') || typeProprieteFormate.startsWith('i') || typeProprieteFormate.startsWith('o') || typeProprieteFormate.startsWith('u') || typeProprieteFormate.startsWith('h') ? ' ' : 'e '}${typeProprieteFormate} `;
     
-    // Ajouter les caractéristiques si disponibles
     if (caracteristiquesFormatees) {
       messageBody += `avec ${caracteristiquesFormatees} `;
     }
     
-    // Ajouter le prix
     messageBody += `à ${prixFormate} `;
     
-    // Ajouter la localisation
     if (property.quartier && property.ville) {
       messageBody += `à ${property.quartier}, ${property.ville}`;
     } else if (property.ville) {
       messageBody += `à ${property.ville}`;
     }
     
-    // Ajouter un call-to-action
     messageBody += `\n\n🏃‍♂️ Vite, venez voir !`;
     
-    // Titre personnalisé
-    let titre = "🔔 Votre alerte immobilière !";
+    let title = "🔔 Votre alerte immobilière !";
     if (nomUtilisateur) {
-      titre = `🔔 ${nomUtilisateur}, une propriété vous attend !`;
+      title = `🔔 ${nomUtilisateur}, une propriété vous attend !`;
     }
 
     return {
-      titre: titre,
+      title: title,
       body: messageBody,
       data: {
         type: 'ALERT_MATCH',
@@ -459,9 +643,8 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
   } catch (error) {
     console.error('❌ Erreur préparation notification personnalisée:', error);
     
-    // Notification de fallback
     return {
-      titre: "🔔 Votre alerte immobilière !",
+      title: "🔔 Votre alerte immobilière !",
       body: `Nouvelle propriété correspondant à vos critères à ${property.ville || 'Abidjan'}`,
       data: {
         type: 'ALERT_MATCH',
@@ -477,7 +660,7 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
 };
 
 /**
- * Récupère toutes les alertes actives (recherches avec alertes activées)
+ * Récupère toutes les alertes actives
  */
 const getActiveAlerts = async () => {
   try {
@@ -521,7 +704,7 @@ const getAllUserPushTokens = async () => {
     const [users] = await pool.execute(query);
     const tokens = users.map(user => user.expo_push_token).filter(token => token !== null);
     
-    console.log(`📋 ${tokens.length} tokens récupérés depuis la base de données`);
+    console.log(`📋 ${tokens.length} tokens Expo récupérés`);
     return tokens;
     
   } catch (error) {
@@ -531,7 +714,7 @@ const getAllUserPushTokens = async () => {
 };
 
 /** 
- * Formate le prix pour l'affichage dans la notification
+ * Formate le prix pour l'affichage
  */
 const formatPropertyPrice = (property) => {
   const { prix, type_transaction, periode_facturation } = property;
@@ -563,7 +746,7 @@ const prepareNewPropertyNotification = (property) => {
     : property.titre;
   
   return {
-    titre: "🏠 Nouvelle propriété disponible!",
+    title: "🏠 Nouvelle propriété disponible!",
     body: `${titreTronque} - ${prixFormate} à ${property.ville || 'Abidjan'}`,
     data: {
       type: 'NEW_PROPERTY',
@@ -576,21 +759,12 @@ const prepareNewPropertyNotification = (property) => {
 };
 
 /**
- * Sauvegarde les notifications en BDD pour tous les utilisateurs
+ * Sauvegarde les notifications en BDD
  */
 const saveNotificationsToDatabase = async (property) => {
   try {
-    console.log('💾 DÉBUT sauvegarde notifications BDD...');
-    console.log('📝 Propriété à notifier:', {
-      id: property.id_propriete,
-      titre: property.titre,
-      ville: property.ville,
-      prix: property.prix,
-      type: property.type_propriete,
-      transaction: property.type_transaction
-    });
-
-    // 1. Récupérer tous les utilisateurs actifs AVEC vérification
+    console.log('💾 Sauvegarde notifications en BDD...');
+    
     const allUsers = await getAllUsers();
     
     if (!allUsers || allUsers.length === 0) {
@@ -602,101 +776,70 @@ const saveNotificationsToDatabase = async (property) => {
 
     let savedCount = 0;
     let errorCount = 0;
-    const errors = [];
 
-    // 2. Créer une notification pour chaque utilisateur
     for (const user of allUsers) {
       try {
-        console.log(`💾 Création notification pour utilisateur ${user.id_utilisateur}...`);
-        
-        // Formater le prix
         const prixFormate = formatPropertyPrice(property);
-        
-        // Construire le message
         const message = `${property.titre} - ${prixFormate} à ${property.ville || 'Abidjan'}`;
         
-        console.log(`📝 Message: ${message.substring(0, 50)}...`);
-        
-        // Créer la notification avec metadata
-        const notificationId = await Notification.create({
+        await Notification.create({
           id_utilisateur: user.id_utilisateur,
           titre: "🏠 Nouvelle propriété disponible!",
           message: message,
           type: 'nouvelle_propriete',
           metadata: JSON.stringify({
             propertyId: property.id_propriete,
-            propertytitre: property.titre,
+            propertyTitle: property.titre,
             propertyPrice: property.prix,
             propertyCity: property.ville,
             propertyType: property.type_propriete,
             propertyTransaction: property.type_transaction,
             slug: property.slug || null,
-            timestamp: new Date().toISOString(),
-            notificationType: 'general_broadcast'
+            timestamp: new Date().toISOString()
           })
         });
 
-        console.log(`✅ Notification BDD ${notificationId} créée pour utilisateur ${user.id_utilisateur}`);
         savedCount++;
 
       } catch (userError) {
-        console.error(`❌ Erreur notification BDD utilisateur ${user.id_utilisateur}:`, userError.message);
+        console.error(`❌ Erreur utilisateur ${user.id_utilisateur}:`, userError.message);
         errorCount++;
-        errors.push({
-          userId: user.id_utilisateur,
-          error: userError.message,
-          timestamp: new Date().toISOString()
-        });
       }
     }
 
-    const result = {
+    console.log(`💾 BDD: ${savedCount}/${allUsers.length} réussites, ${errorCount} erreurs`);
+    
+    return {
       saved: savedCount > 0,
       count: savedCount,
       errors: errorCount,
-      total: allUsers.length,
-      successRate: allUsers.length > 0 ? (savedCount / allUsers.length * 100).toFixed(2) + '%' : '0%',
-      detailedErrors: errors
+      total: allUsers.length
     };
 
-    console.log(`💾 Sauvegarde BDD terminée: ${savedCount}/${allUsers.length} réussites (${result.successRate}), ${errorCount} erreurs`);
-    console.log('📊 Résultat détaillé:', result);
-    
-    return result;
-
   } catch (error) {
-    console.error('❌ ERREUR CRITIQUE sauvegarde notifications BDD:', error);
-    console.error('Stack trace:', error.stack);
-    
+    console.error('❌ Erreur sauvegarde BDD:', error);
     return {
       saved: false,
       count: 0,
       errors: 1,
       total: 0,
-      error: error.message,
-      stack: error.stack,
-      timestamp: new Date().toISOString()
+      error: error.message
     };
   }
 };
 
 /**
- * Sauvegarde la notification d'alerte personnalisée en base de données
+ * Sauvegarde la notification d'alerte personnalisée
  */
 const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, messagePersonnalise) => {
   try {
     console.log(`💾 Sauvegarde notification alerte pour utilisateur ${userId}...`);
-    console.log('📋 Détails:', {
-      propertyId: property.id_propriete,
-      alertName: nomAlerte,
-      messageLength: messagePersonnalise?.length || 0
-    });
 
     const notificationId = await Notification.create({
       id_utilisateur: userId,
       titre: "🔔 Votre alerte immobilière!",
       message: messagePersonnalise,
-      type: 'nouvelle_propriete', // Ou 'alerte_recherche' selon votre ENUM
+      type: 'nouvelle_propriete',
       metadata: JSON.stringify({
         propertyId: property.id_propriete,
         alertName: nomAlerte,
@@ -710,88 +853,12 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
       })
     });
 
-    console.log(`✅ Notification alerte personnalisée ${notificationId} sauvegardée pour utilisateur ${userId}`);
+    console.log(`✅ Notification alerte ${notificationId} sauvegardée`);
     return notificationId;
     
   } catch (error) {
-    console.error('❌ Erreur sauvegarde notification alerte personnalisée:', error);
-    console.error('Détails erreur:', {
-      userId,
-      propertyId: property?.id_propriete,
-      errorMessage: error.message,
-      errorCode: error.code
-    });
+    console.error('❌ Erreur sauvegarde notification alerte:', error);
     return null;
-  }
-};
-
-/**
- * Envoie des notifications en lot via Expo
- */
-const sendBulkNotificationsExpo = async (tokens, notification) => {
-  try {
-    const messages = [];
-    let validTokens = 0;
-    let invalidTokens = 0;
-    
-    console.log(`📤 Préparation de ${tokens.length} notifications...`);
-
-    // Préparer les messages pour chaque token valide
-    for (const token of tokens) {
-      if (!Expo.isExpoPushToken(token)) {
-        console.log(`❌ Token invalide ignoré: ${token.substring(0, 20)}...`);
-        invalidTokens++;
-        continue;
-      }
-      
-      messages.push({
-        to: token,
-        sound: 'default',
-        titre: notification.titre,
-        body: notification.body,
-        data: notification.data,
-        channelId: 'default',
-        priority: 'high',
-      });
-      
-      validTokens++;
-    }
-    
-    console.log(`✅ ${validTokens} tokens valides, ❌ ${invalidTokens} tokens invalides`);
-    
-    if (messages.length === 0) {
-      console.log('ℹ️ Aucun message valide à envoyer');
-      return [];
-    }
-    
-    // Envoi par chunks de 100 (limitation Expo)
-    const chunks = expo.chunkPushNotifications(messages);
-    const tickets = [];
-    let totalSent = 0;
-    
-    console.log(`🔄 Découpage en ${chunks.length} lot(s) de notifications...`);
-    
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      try {
-        console.log(`📨 Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
-        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-        tickets.push(...ticketChunk);
-        totalSent += chunk.length;
-        
-        console.log(`✅ Lot ${i + 1} envoyé avec succès (${chunk.length} notifications)`);
-      } catch (error) {
-        console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
-      }
-    }
-    
-    console.log(`🎉 ${totalSent} notifications envoyées au total`);
-    
-    return tickets;
-    
-  } catch (error) {
-    console.error('❌ Erreur envoi notifications:', error);
-    throw error;
   }
 };
 
@@ -800,51 +867,52 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
  */
 const notifySingleUser = async (userToken, notification) => {
   try {
-    if (!Expo.isExpoPushToken(userToken)) {
+    if (!userToken || !Expo.isExpoPushToken(userToken)) {
       console.log('❌ Token utilisateur invalide');
       return { success: false, message: 'Token invalide' };
     }
 
+    // S'assurer que le format est correct pour Expo
     const message = {
       to: userToken,
       sound: 'default',
-      titre: notification.titre,
+      title: notification.title || notification.titre, // Support les deux
       body: notification.body,
-      data: notification.data,
-      channelId: 'default',
+      data: notification.data || {},
+      channelId: notification.channelId || 'default',
       priority: notification.priority || 'high',
     };
 
-    const ticket = await expo.sendPushNotificationsAsync([message]);
+    const tickets = await expo.sendPushNotificationsAsync([message]);
+    const ticket = tickets[0];
     
-    console.log(`✅ Notification personnalisée envoyée: ${notification.titre}`);
-    return { success: true, ticket: ticket[0] };
+    if (ticket.status === 'ok') {
+      console.log(`✅ Notification personnalisée envoyée: ${notification.title || notification.titre}`);
+      return { success: true, ticket: ticket };
+    } else {
+      console.log(`❌ Échec envoi notification: ${ticket.message}`);
+      return { success: false, message: ticket.message };
+    }
     
   } catch (error) {
     console.error('❌ Erreur notification utilisateur:', error);
     return { success: false, message: error.message };
   }
-  
 };
 
 /**
- * Notifie les utilisateurs dont les alertes correspondent à la nouvelle propriété
+ * Notifie les utilisateurs dont les alertes correspondent
  */
 const notifyUsersWithMatchingAlerts = async (property) => {
   try {
-    console.log('🎯 DÉBUT NOTIFICATION ALERTES PERSONNALISÉES');
-    console.log('📝 Propriété à vérifier:', {
+    console.log('🎯 NOTIFICATION ALERTES PERSONNALISÉES');
+    console.log('📝 Propriété:', {
       id: property.id_propriete,
       titre: property.titre,
       type: property.type_propriete,
-      transaction: property.type_transaction,
-      ville: property.ville,
-      quartier: property.quartier,
-      prix: property.prix,
-      statut: property.statut
+      ville: property.ville
     });
 
-    // 1. Récupérer toutes les alertes actives
     const activeAlerts = await getActiveAlerts();
     
     if (activeAlerts.length === 0) {
@@ -857,18 +925,15 @@ const notifyUsersWithMatchingAlerts = async (property) => {
       };
     }
 
-    console.log(`🔍 Vérification de ${activeAlerts.length} alertes actives...`);
+    console.log(`🔍 Vérification de ${activeAlerts.length} alertes...`);
 
     let matchesFound = 0;
     let notificationsSent = 0;
     const usersToNotify = [];
-    const matchingDetails = [];
 
-    // 2. Vérifier chaque alerte AVEC DÉTAILS
     for (const alert of activeAlerts) {
       try {
-        console.log(`\n🔍 Vérification alerte ${alert.id_recherche} pour ${alert.fullname}...`);
-        console.log(`📋 Critères alerte:`, typeof alert.criteres === 'string' ? JSON.parse(alert.criteres) : alert.criteres);
+        console.log(`🔍 Vérification alerte ${alert.id_recherche} pour ${alert.fullname}...`);
         
         const matches = propertyMatchesCriteria(property, alert.criteres);
         
@@ -876,107 +941,66 @@ const notifyUsersWithMatchingAlerts = async (property) => {
           console.log(`🎉 ALERTE ${alert.id_recherche} CORRESPOND!`);
           matchesFound++;
           usersToNotify.push(alert);
-          matchingDetails.push({
-            alertId: alert.id_recherche,
-            userName: alert.fullname,
-            alertName: alert.nom_recherche
-          });
-        } else {
-          console.log(`❌ Alerte ${alert.id_recherche} ne correspond pas`);
         }
         
       } catch (alertError) {
-        console.error(`❌ Erreur vérification alerte ${alert.id_recherche}:`, alertError.message);
+        console.error(`❌ Erreur vérification alerte:`, alertError.message);
       }
     }
 
-    console.log(`\n📊 RÉSULTAT MATCHING: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
-    if (matchingDetails.length > 0) {
-      console.log('📋 Détails des correspondances:');
-      matchingDetails.forEach(detail => {
-        console.log(`   - ${detail.userName} (Alerte: "${detail.alertName}")`);
-      });
-    }
+    console.log(`📊 RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
 
-    // 3. Notifier les utilisateurs concernés AVEC PERSONNALISATION
     if (usersToNotify.length > 0) {
-      console.log(`\n📨 Préparation notifications PERSONNALISÉES pour ${usersToNotify.length} utilisateurs...`);
+      console.log(`📨 Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
       
       for (const userAlert of usersToNotify) {
         try {
-          console.log(`\n👤 Traitement notification pour ${userAlert.fullname}...`);
+          console.log(`👤 Notification pour ${userAlert.fullname}...`);
           
-          // Récupérer le profil utilisateur pour personnalisation
           const userProfile = await getUserProfile(userAlert.id_utilisateur);
-          console.log(`📊 Profil utilisateur:`, userProfile ? 'Trouvé' : 'Non trouvé');
-          
-          // Préparer la notification personnalisée
           const notification = await preparePersonalizedAlertNotification(property, userAlert, userProfile);
           
-          console.log(`📝 Notification personnalisée pour ${userAlert.fullname}:`);
-          console.log(`   Titre: ${notification.titre}`);
-          console.log(`   Body: ${notification.body}`);
-          console.log(`   Data:`, notification.data);
-          
-          // Envoyer la notification push
           const result = await notifySingleUser(userAlert.expo_push_token, notification);
           
           if (result.success) {
             notificationsSent++;
-            console.log(`✅ Notification personnalisée ENVOYÉE à ${userAlert.fullname}`);
+            console.log(`✅ Notification envoyée à ${userAlert.fullname}`);
             
-            // Sauvegarder la notification en BDD
-            const notificationId = await saveAlertNotificationToDatabase(
+            await saveAlertNotificationToDatabase(
               userAlert.id_utilisateur, 
               property, 
               userAlert.nom_recherche, 
               notification.body
             );
             
-            if (notificationId) {
-              console.log(`💾 Notification ${notificationId} sauvegardée en BDD`);
-            } else {
-              console.log(`⚠️ Échec sauvegarde BDD pour ${userAlert.fullname}`);
-            }
-            
           } else {
-            console.log(`❌ Échec envoi notification pour ${userAlert.fullname}:`, result.message);
+            console.log(`❌ Échec notification pour ${userAlert.fullname}:`, result.message);
           }
           
         } catch (userError) {
-          console.error(`❌ Erreur notification utilisateur ${userAlert.id_utilisateur}:`, userError.message);
+          console.error(`❌ Erreur notification utilisateur:`, userError.message);
         }
       }
     } else {
-      console.log('ℹ️ Aucun utilisateur à notifier - aucune correspondance trouvée');
+      console.log('ℹ️ Aucun utilisateur à notifier');
     }
 
-    const finalResult = {
+    return {
       success: true,
       alerts_checked: activeAlerts.length,
       alerts_matched: matchesFound,
-      users_notified: notificationsSent,
-      matching_details: matchingDetails,
-      message: notificationsSent > 0 ? 
-        `${notificationsSent} utilisateurs notifiés avec des messages personnalisés` :
-        'Aucune correspondance trouvée pour les alertes'
+      users_notified: notificationsSent
     };
 
-    console.log('\n🎯 NOTIFICATION ALERTES PERSONNALISÉES TERMINÉE:', finalResult);
-    return finalResult;
-
   } catch (error) {
-    console.error('❌❌❌ ERREUR CRITIQUE NOTIFICATION ALERTES ❌❌❌');
-    console.error('Détails erreur:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('❌ ERREUR notification alertes:', error);
     
     return {
       success: false,
       message: 'Erreur lors de la notification des alertes',
       error: error.message,
       alerts_checked: 0,
-      users_notified: 0,
-      matching_details: []
+      users_notified: 0
     };
   }
 };
@@ -986,43 +1010,48 @@ const notifyUsersWithMatchingAlerts = async (property) => {
  */
 const notifyAllUsersAboutNewProperty = async (property) => {
   try {
-    console.log('🚀🚀🚀 DÉBUT NOTIFICATION NOUVELLE PROPRIÉTÉ 🚀🚀🚀');
-    console.log('📝 Données propriété:', {
+    console.log('🚀 NOTIFICATION NOUVELLE PROPRIÉTÉ');
+    console.log('📝 Propriété:', {
       id: property.id_propriete,
       titre: property.titre,
       prix: property.prix,
       ville: property.ville
     });
 
-    // 1. 📱 Notificatit = await saveNotificationsToDatabase(property);
+    // 1. Récupérer tous les tokens
+    const tokens = await getAllUserPushTokens();
+    const notificationContent = prepareNewPropertyNotification(property);
 
-    // 3. 🎯 NOTIFICATIONS PAR ALERTES PERSONNALISÉES
-    console.log('🎯 Étape 3: Notifications par alertes personnalisées...');
+    // 2. Envoyer les notifications push (limité à 1000 pour éviter timeout)
+    let pushTickets = [];
+    if (tokens.length > 0) {
+      const limitedTokens = tokens.slice(0, 1000);
+      pushTickets = await sendBulkNotificationsExpo(limitedTokens, notificationContent);
+    }
+
+    // 3. Sauvegarder en BDD
+    const bddResult = await saveNotificationsToDatabase(property);
+
+    // 4. Notifications par alertes
     const alertResult = await notifyUsersWithMatchingAlerts(property);
 
     const result = {
       success: true,
-      // Notifications générales
       general_push_sent: pushTickets.length,
       general_bdd_saved: bddResult.saved,
       general_bdd_count: bddResult.count,
-      // Notifications alertes
       alerts_checked: alertResult.alerts_checked,
       alerts_matched: alertResult.alerts_matched,
       alerts_notified: alertResult.users_notified,
-      // Totaux
       total_users: bddResult.total,
       total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    console.log('🎉🎉🎉 NOTIFICATION COMPLÈTE TERMINÉE 🎉🎉🎉');
-    console.log('📊 Résultat final:', result);
-
+    console.log('🎉 NOTIFICATION COMPLÈTE TERMINÉE:', result);
     return result;
 
   } catch (error) {
-    console.error('❌❌❌ ERREUR CRITIQUE NOTIFICATION ❌❌❌');
-    console.error('Détails erreur:', error.message);
+    console.error('❌ ERREUR NOTIFICATION:', error);
     
     return {
       success: false,
@@ -1034,10 +1063,12 @@ const notifyAllUsersAboutNewProperty = async (property) => {
   }
 };
 
-
+/**
+ * Récupère les détails d'une réservation
+ */
 const getReservationDetails = async (id_reservation) => {
   try {
-    console.log('🔍 Récupération détails réservation pour ID:', id_reservation);
+    console.log('🔍 Récupération détails réservation ID:', id_reservation);
     
     const query = `
       SELECT 
@@ -1050,23 +1081,21 @@ const getReservationDetails = async (id_reservation) => {
         p.id_utilisateur AS id_proprietaire,
         
         u.fullname AS visiteur_nom,
-        prof_u.email AS visiteur_email,          -- Email du visiteur depuis Profile
+        prof_u.email AS visiteur_email,
         u.telephone AS visiteur_telephone,
         u.expo_push_token AS visiteur_token,
         
         prop_u.fullname AS proprietaire_nom,
-        prof_prop.email AS proprietaire_email,   -- Email du propriétaire depuis Profile
+        prof_prop.email AS proprietaire_email,
         prop_u.telephone AS proprietaire_telephone,
         prop_u.expo_push_token AS proprietaire_token
         
       FROM Reservation r
       JOIN Propriete p ON r.id_propriete = p.id_propriete
       
-      -- Jointure pour le visiteur avec Profile
       JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
       LEFT JOIN Profile prof_u ON u.id_utilisateur = prof_u.id_utilisateur
       
-      -- Jointure pour le propriétaire avec Profile
       JOIN Utilisateur prop_u ON p.id_utilisateur = prop_u.id_utilisateur
       LEFT JOIN Profile prof_prop ON prop_u.id_utilisateur = prof_prop.id_utilisateur
       
@@ -1076,81 +1105,58 @@ const getReservationDetails = async (id_reservation) => {
     const [reservations] = await pool.execute(query, [id_reservation]);
 
     if (reservations.length === 0) {
-      console.log('⚠️ Aucune réservation trouvée avec ID:', id_reservation);
+      console.log('⚠️ Aucune réservation trouvée');
       return null;
-    }
+    } 
 
     const reservation = reservations[0];
     
-    // DEBUG: Afficher les infos de token
-    console.log('🔑 Tokens trouvés pour réservation', id_reservation, ':', {
-      visiteur: {
-        nom: reservation.visiteur_nom,
-        email: reservation.visiteur_email,
-        token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
-        token_length: reservation.visiteur_token ? reservation.visiteur_token.length : 0
-      },
-      proprietaire: {
-        nom: reservation.proprietaire_nom,
-        email: reservation.proprietaire_email,
-        token: reservation.proprietaire_token ? 'PRÉSENT' : 'ABSENT',
-        token_length: reservation.proprietaire_token ? reservation.proprietaire_token.length : 0
-      }
-    });
+    console.log('🔑 Tokens trouvés:', {
+      visiteur_token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
+      proprietaire_token: reservation.proprietaire_token ? 'PRÉSENT' : 'ABSENT'
+    }); 
 
     return reservation;
   } catch (error) {
     console.error('❌ Erreur récupération détails réservation:', error);
-    console.error('Erreur SQL:', error.sql || 'Pas de SQL');
-    console.error('Code erreur:', error.code);
     return null;
   }
 };
 
-
+/**
+ * Notification nouvelle réservation au propriétaire
+ */
 const notifyOwnerNewReservation = async (reservation) => {
   try {
-    console.log('📅 Notification nouvelle réservation au propriétaire:', reservation);
+    console.log('📅 Notification nouvelle réservation au propriétaire');
     
-    // 1. Récupérer les détails du propriétaire
-    const [ownerDetails] = await pool.execute(
-      `SELECT 
-        p.titre as propriete_titre,
-        p.id_utilisateur as id_proprietaire,
-        prop_u.fullname as proprietaire_nom,
-        prop_u.expo_push_token as proprietaire_token
-       FROM Propriete p
-       JOIN Utilisateur prop_u ON p.id_utilisateur = prop_u.id_utilisateur
-       WHERE p.id_propriete = ?`,
-      [reservation.id_propriete]
-    );
-    
-    if (ownerDetails.length === 0) {
-      console.log('❌ Propriétaire non trouvé pour la propriété:', reservation.id_propriete);
-      return { success: false, error: 'Propriétaire non trouvé' };
+    // Vérifier si visiteur = propriétaire
+    if (reservation.id_utilisateur === reservation.id_proprietaire) {
+      console.log('ℹ️ Visiteur est propriétaire, notification annulée');
+      return { 
+        success: true, 
+        skipped: true, 
+        reason: 'visitor_is_owner' 
+      };
     }
-    
-    // 2. Récupérer les infos du visiteur
-    const [visitorDetails] = await pool.execute(
-      `SELECT fullname as visiteur_nom 
-       FROM Utilisateur 
-       WHERE id_utilisateur = ?`,
-      [reservation.id_utilisateur]
-    );
-    
-    const visiteur_nom = visitorDetails.length > 0 ? visitorDetails[0].visiteur_nom : 'Un visiteur';
-    const proprietaire = ownerDetails[0];
-    
-    // 3. Vérifier le token
-    const proprietaire_token = proprietaire.proprietaire_token;
+
+    const reservationDetails = await getReservationDetails(reservation.id_reservation);
+    if (!reservationDetails) {
+      console.log('❌ Détails réservation non trouvés');
+      return { success: false, error: 'Réservation non trouvée' };
+    }
+
+    const { proprietaire_token, proprietaire_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
+    const visiteur_nom = reservationDetails.visiteur_nom || 'Un visiteur';
+
     if (!proprietaire_token || !Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`❌ Token propriétaire invalide ou manquant pour ${proprietaire.proprietaire_nom}`);
+      console.log(`❌ Token propriétaire invalide pour ${proprietaire_nom}`);
       return { success: false, error: 'Token propriétaire invalide' };
     }
 
-    // 4. Préparer la notification
-    const titre = "📅 Nouvelle demande de visite";
-    const body = `${visiteur_nom} souhaite visiter "${proprietaire.propriete_titre}" le ${reservation.date_visite} à ${reservation.heure_visite}`;
+    const formattedDate = formatDateForDisplay(date_visite);
+    const title = "📅 Nouvelle demande de visite";
+    const body = `${visiteur_nom} souhaite visiter "${propriete_titre}" le ${formattedDate} à ${heure_visite}`;
     
     const data = {
       type: 'NEW_RESERVATION',
@@ -1162,21 +1168,20 @@ const notifyOwnerNewReservation = async (reservation) => {
       timestamp: new Date().toISOString()
     };
 
-    // 5. Envoyer la notification
     const result = await sendPushNotification(
       proprietaire_token, 
-      titre, 
+      title, 
       body, 
       data,
-      proprietaire.id_proprietaire, // userId pour BDD
-      'reservation'        // notificationType
+      reservationDetails.id_proprietaire,
+      'reservation'
     );
 
-    console.log(`✅ Notification envoyée au propriétaire ${proprietaire.proprietaire_nom}`);
+    console.log(`✅ Notification envoyée au propriétaire ${proprietaire_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification propriétaire nouvelle réservation:', error);
+    console.error('❌ Erreur notification propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1197,11 +1202,11 @@ const notifyVisitorReservationRequest = async (reservation) => {
     const { visiteur_token, visiteur_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`❌ Token visiteur invalide ou manquant pour ${visiteur_nom}`);
+      console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const titre = "✅ Demande envoyée !";
+    const title = "✅ Demande envoyée !";
     const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
     
     const data = {
@@ -1214,156 +1219,113 @@ const notifyVisitorReservationRequest = async (reservation) => {
       timestamp: new Date().toISOString()
     };
 
-    const result = await sendPushNotification(visiteur_token, titre, body, data);
-
-    // Sauvegarder en BDD
-    if (result.success) {
-      await Notification.create({
-        id_utilisateur: reservation.id_utilisateur,
-        titre: titre,
-        message: body,
-        type: 'reservation_request_sent',
-        metadata: JSON.stringify({
-          reservationId: reservation.id_reservation,
-          propertyId: reservation.id_propriete,
-          propertytitre: propriete_titre,
-          visitDate: date_visite,
-          visitTime: heure_visite,
-          notificationType: 'visitor_request_confirmation'
-        })
-      });
-    }
+    const result = await sendPushNotification(
+      visiteur_token, 
+      title, 
+      body, 
+      data,
+      reservation.id_utilisateur,
+      'reservation_request_sent'
+    );
 
     console.log(`✅ Notification envoyée au visiteur ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification visiteur demande:', error);
+    console.error('❌ Erreur notification visiteur:', error);
     return { success: false, error: error.message };
   }
 };
 
 /**
- * Notification de changement de statut (pour propriétaire ET visiteur) - VERSION CORRIGÉE
+ * Notification de changement de statut
  */
 const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, message = null) => {
   try {
-    console.log('=== DÉBUT NOTIFICATION CHANGEMENT STATUT ===');
-    console.log('📥 Paramètres reçus:', { 
-      type_reservation: typeof reservation,
-      reservation: reservation,
-      oldStatus,
-      newStatus,
-      message
-    });
-
+    console.log('=== NOTIFICATION CHANGEMENT STATUT ===');
+    
     let reservationDetails;
     let reservationId;
 
-    // 1. DÉTERMINER SI ON A UN ID OU UN OBJET
     if (typeof reservation === 'number' || typeof reservation === 'string') {
-      // C'est un ID, on récupère les détails
       reservationId = reservation;
-      console.log(`🔍 Reservation est un ID: ${reservationId}, récupération des détails...`);
       reservationDetails = await getReservationDetails(reservationId);
     } else if (reservation && reservation.id_reservation) {
-      // C'est déjà un objet réservation
       reservationDetails = reservation;
       reservationId = reservationDetails.id_reservation;
-      console.log(`✅ Reservation est un objet avec ID: ${reservationId}`);
     } else {
-      // Format invalide
-      console.error('❌ Format de réservation invalide:', reservation);
-      return { 
-        success: false, 
-        error: 'Format de réservation invalide' 
-      };
+      console.error('❌ Format de réservation invalide');
+      return { success: false, error: 'Format de réservation invalide' };
     }
 
     if (!reservationDetails) {
       console.log('❌ Détails réservation non trouvés');
-      return { 
-        success: false, 
-        error: 'Réservation non trouvée',
-        details: { reservationId, oldStatus, newStatus }
-      };
+      return { success: false, error: 'Réservation non trouvée' };
     }
 
-    console.log('📋 Détails réservation trouvés:', {
-      id: reservationDetails.id_reservation,
-      proprietaire_nom: reservationDetails.proprietaire_nom,
-      visiteur_nom: reservationDetails.visiteur_nom,
-      propriete_titre: reservationDetails.propriete_titre,
-      date_visite: reservationDetails.date_visite,
-      heure_visite: reservationDetails.heure_visite,
-      statut_actuel: reservationDetails.statut
-    });
-
-    // Récupérer les tokens (assurez-vous qu'ils existent dans les résultats de la requête)
     const { 
       proprietaire_token, 
       proprietaire_nom, 
-      id_utilisateur: proprietaire_id,
+      id_proprietaire,
       visiteur_token, 
       visiteur_nom, 
-      id_utilisateur: visiteur_id,
+      id_utilisateur,
       propriete_titre, 
       date_visite, 
       heure_visite 
     } = reservationDetails;
 
-    // DEBUG: Vérifier les tokens
     console.log('🔑 Tokens disponibles:', {
       proprietaire_token: proprietaire_token ? 'PRÉSENT' : 'ABSENT',
       visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT'
     });
 
-    // Messages personnalisés selon le statut (garder votre code existant)
+    // Messages personnalisés selon le statut
     const statusMessages = {
       'confirme': {
         owner: {
-          titre: "✅ Visite confirmée",
-          body: `La visite de ${visiteur_nom} pour "${propriete_titre}" est confirmée pour le ${date_visite} à ${heure_visite}.`,
+          title: "✅ Visite confirmée",
+          body: `La visite de ${visiteur_nom} pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         },
         visitor: {
-          titre: "🎉 Visite confirmée !",
-          body: `Votre visite pour "${propriete_titre}" est confirmée pour le ${date_visite} à ${heure_visite}.`,
+          title: "🎉 Visite confirmée !",
+          body: `Votre visite pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         }
       },
       'annule': {
         owner: {
-          titre: "❌ Visite annulée",
-          body: `La visite pour "${propriete_titre}" le ${date_visite} a été annulée. ${message || ''}`,
+          title: "❌ Visite annulée",
+          body: `La visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)} a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         },
         visitor: {
-          titre: "❌ Visite annulée",
+          title: "❌ Visite annulée",
           body: `Votre visite pour "${propriete_titre}" a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         }
       },
       'termine': {
         owner: {
-          titre: "🏁 Visite terminée",
-          body: `La visite pour "${propriete_titre}" s'est terminée le ${date_visite}.`,
+          title: "🏁 Visite terminée",
+          body: `La visite pour "${propriete_titre}" s'est terminée le ${formatDateForDisplay(date_visite)}.`,
           type: 'reservation_completed'
         },
         visitor: {
-          titre: "🏁 Visite terminée",
+          title: "🏁 Visite terminée",
           body: `Merci d'avoir visité "${propriete_titre}" ! N'hésitez pas à laisser un avis.`,
           type: 'reservation_completed'
         }
       },
       'refuse': {
         owner: {
-          titre: "🚫 Visite refusée",
-          body: `Vous avez refusé la visite pour "${propriete_titre}" le ${date_visite}. ${message || ''}`,
+          title: "🚫 Visite refusée",
+          body: `Vous avez refusé la visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)}. ${message || ''}`,
           type: 'reservation_refused'
         },
         visitor: {
-          titre: "🚫 Visite refusée",
+          title: "🚫 Visite refusée",
           body: `Votre demande de visite pour "${propriete_titre}" a été refusée. ${message || 'Le propriétaire a refusé votre demande.'}`,
           type: 'reservation_refused'
         }
@@ -1373,11 +1335,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     const messages = statusMessages[newStatus];
     if (!messages) {
       console.log(`❌ Statut non géré: ${newStatus}`);
-      return { 
-        success: false, 
-        error: 'Statut non géré',
-        validStatuses: Object.keys(statusMessages)
-      };
+      return { success: false, error: 'Statut non géré' };
     }
 
     const results = [];
@@ -1401,10 +1359,10 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
       const ownerResult = await sendPushNotification(
         proprietaire_token,
-        messages.owner.titre,
+        messages.owner.title,
         messages.owner.body,
         ownerData,
-        proprietaire_id,
+        id_proprietaire,
         messages.owner.type
       );
 
@@ -1414,9 +1372,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
         name: proprietaire_nom
       });
 
-      sentNotifications.push('owner');
-    } else {
-      console.log(`⚠️ Pas de token valide pour le propriétaire ${proprietaire_nom}`);
+      if (ownerResult.success) sentNotifications.push('owner');
     }
 
     // 2. Notification au VISITEUR
@@ -1437,10 +1393,10 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
       const visitorResult = await sendPushNotification(
         visiteur_token,
-        messages.visitor.titre,
+        messages.visitor.title,
         messages.visitor.body,
         visitorData,
-        visiteur_id,
+        id_utilisateur,
         messages.visitor.type
       );
 
@@ -1450,13 +1406,11 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
         name: visiteur_nom
       });
 
-      sentNotifications.push('visitor');
-    } else {
-      console.log(`⚠️ Pas de token valide pour le visiteur ${visiteur_nom}`);
+      if (visitorResult.success) sentNotifications.push('visitor');
     }
 
     console.log(`✅ ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
-    console.log('=== FIN NOTIFICATION CHANGEMENT STATUT ===');
+    console.log('=== FIN NOTIFICATION ===');
 
     return {
       success: results.some(r => r.success),
@@ -1464,21 +1418,15 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       total_attempted: results.length,
       details: results,
       sent_to: sentNotifications,
-      reservation_id: reservationId,
-      status_change: `${oldStatus} → ${newStatus}`
+      reservation_id: reservationId
     };
 
   } catch (error) {
-    console.error('❌❌❌ ERREUR CRITIQUE NOTIFICATION CHANGEMENT STATUT ❌❌❌');
-    console.error('Détails erreur:', error.message);
-    console.error('Stack:', error.stack);
+    console.error('❌ ERREUR notification changement statut:', error);
     
     return {
       success: false,
-      error: error.message,
-      reservation: reservation,
-      oldStatus: oldStatus,
-      newStatus: newStatus
+      error: error.message
     };
   }
 };
@@ -1503,8 +1451,9 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const titre = "💬 Message du propriétaire";
-    const body = `${proprietaire_nom} vous a envoyé un message concernant "${propriete_titre}": "${message.substring(0, 50)}${message.length > 50 ? '...' : ''}"`;
+    const title = "💬 Message du propriétaire";
+    const truncatedMessage = message.length > 50 ? message.substring(0, 47) + '...' : message;
+    const body = `${proprietaire_nom} vous a envoyé un message concernant "${propriete_titre}": "${truncatedMessage}"`;
     
     const data = {
       type: 'OWNER_MESSAGE',
@@ -1515,25 +1464,14 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       timestamp: new Date().toISOString()
     };
 
-    const result = await sendPushNotification(visiteur_token, titre, body, data);
-
-    // Sauvegarder en BDD
-    if (result.success) {
-      await Notification.create({
-        id_utilisateur: reservationDetails.id_utilisateur, // ID visiteur
-        titre: titre,
-        message: body,
-        type: 'owner_message',
-        metadata: JSON.stringify({
-          reservationId: reservationId,
-          propertyId: reservationDetails.id_propriete,
-          propertytitre: propriete_titre,
-          ownerName: proprietaire_nom,
-          message: message,
-          notificationType: 'owner_message'
-        })
-      });
-    }
+    const result = await sendPushNotification(
+      visiteur_token, 
+      title, 
+      body, 
+      data,
+      reservationDetails.id_utilisateur,
+      'owner_message'
+    );
 
     console.log(`✅ Message propriétaire envoyé à ${visiteur_nom}`);
     return result;
@@ -1557,14 +1495,14 @@ const notifyVisitReminder = async (reservationId) => {
       return { success: false, error: 'Réservation non trouvée' };
     }
 
-    const { visiteur_token, visiteur_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
+    const { visiteur_token, visiteur_nom, propriete_titre, heure_visite } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
       console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const titre = "⏰ Rappel de visite demain";
+    const title = "⏰ Rappel de visite demain";
     const body = `N'oubliez pas votre visite de "${propriete_titre}" demain à ${heure_visite}`;
     
     const data = {
@@ -1576,25 +1514,14 @@ const notifyVisitReminder = async (reservationId) => {
       timestamp: new Date().toISOString()
     };
 
-    const result = await sendPushNotification(visiteur_token, titre, body, data);
-
-    // Sauvegarder en BDD
-    if (result.success) {
-      await Notification.create({
-        id_utilisateur: reservationDetails.id_utilisateur, // ID visiteur
-        titre: titre,
-        message: body,
-        type: 'visit_reminder',
-        metadata: JSON.stringify({
-          reservationId: reservationId,
-          propertyId: reservationDetails.id_propriete,
-          propertytitre: propriete_titre,
-          visitDate: date_visite,
-          visitTime: heure_visite,
-          notificationType: 'visit_reminder'
-        })
-      });
-    }
+    const result = await sendPushNotification(
+      visiteur_token, 
+      title, 
+      body, 
+      data,
+      reservationDetails.id_utilisateur,
+      'visit_reminder'
+    );
 
     console.log(`✅ Rappel visite envoyé à ${visiteur_nom}`);
     return result;
@@ -1606,12 +1533,13 @@ const notifyVisitReminder = async (reservationId) => {
 };
 
 // ============================================================================
-// EXPORTS CORRIGÉS - AVEC sendPushNotification
+// EXPORTS
 // ============================================================================
 
 export {
-  sendPushNotification, // ✅ AJOUTÉ
+  sendPushNotification,
   sendBulkNotifications,
+  sendBulkNotificationsExpo,
   getAllUserPushTokens,
   notifyAllUsersAboutNewProperty,
   notifyUsersWithMatchingAlerts,
@@ -1626,8 +1554,9 @@ export {
 };
 
 export default {
-  sendPushNotification, 
+  sendPushNotification,
   sendBulkNotifications,
+  sendBulkNotificationsExpo,
   getAllUserPushTokens,
   notifyAllUsersAboutNewProperty,
   notifyUsersWithMatchingAlerts,
