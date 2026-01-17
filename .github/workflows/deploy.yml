@@ -1,0 +1,28 @@
+name: Déploiement Simple
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Récupérer le code
+        uses: actions/checkout@v4
+        
+      - name: 🚀 Déployer sur VPS
+        uses: appleboy/ssh-action@v0.1.5
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USER }}
+          key: ${{ secrets.HOSTINGER_SSH_KEY }}
+          port: '65002'
+          script: |
+            echo "🔥 Déploiement en cours..."
+            cd /var/www/app
+            git pull
+            npm install --production
+            pm2 restart app
+            echo "✅ Déployé avec succès !"
