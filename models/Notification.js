@@ -35,7 +35,7 @@ class Notification {
       if (userExists.length === 0) {
         throw new Error(`Utilisateur ${id_utilisateur} non trouvé`);
       }
-
+ 
       // Insertion avec metadata
       const [result] = await connection.execute(
         `INSERT INTO Notification 

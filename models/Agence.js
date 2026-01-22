@@ -1,5 +1,6 @@
 import { pool } from '../config/db.js';
 import Propriete from './Propriete.js';
+import Notification from './Notification.js'; 
 
 // =============================================================================
 // CONSTANTES ET CONFIGURATIONS
@@ -407,133 +408,166 @@ class Agence {
     }
   }
 
-  /**
-   * Métriques dashboard
-   */
-  static async getDashboardMetrics(id_agence) {
+static async getDashboardMetrics(id_agence) {
+  try {
+    // Compter les notifications non lues AVANT les Promise.all
+    let notificationsNonLues = 0;
+    let notificationsStats = {};
+    
     try {
-      const [
-        suiveursStats,
-        reservationsStats,
-        proprietesStats,
-        revenueStats,
-        activiteRecent,
-        croissanceSuiveurs,
-        topProprietes
-      ] = await Promise.all([
-        this.executeQuery(`
-          SELECT 
-            COUNT(*) as total_suiveurs,
-            SUM(CASE WHEN notifications_actives = TRUE THEN 1 ELSE 0 END) as suiveurs_actifs,
-            COUNT(DISTINCT CASE WHEN date_suivi >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) THEN id_suiveur END) as nouveaux_7j
-          FROM SuiviAgence 
-          WHERE id_suivi_utilisateur = ?
-        `, [id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            COUNT(*) as total_reservations,
-            SUM(CASE WHEN statut = 'confirme' THEN 1 ELSE 0 END) as confirmees,
-            SUM(CASE WHEN statut = 'attente' THEN 1 ELSE 0 END) as attente,
-            SUM(CASE WHEN date_visite >= CURDATE() AND statut = 'confirme' THEN 1 ELSE 0 END) as a_venir
+      notificationsNonLues = await Notification.countUnread(id_agence);
+      console.log(`📊 Notifications non lues pour agence ${id_agence}:`, notificationsNonLues);
+      
+      // Optionnel: Récupérer plus de stats si besoin
+      notificationsStats = {
+        notifications_non_lues: notificationsNonLues,
+        total_notifications: notificationsNonLues // ou une autre requête si vous voulez le total
+      };
+    } catch (notifError) {
+      console.warn('⚠️ Impossible de récupérer les notifications:', notifError);
+      notificationsNonLues = 0;
+    }
+
+    const [
+      suiveursStats,
+      reservationsStats,
+      proprietesStats,
+      revenueStats,
+      activiteRecent,
+      croissanceSuiveurs,
+      topProprietes
+    ] = await Promise.all([
+      // ✅ Première requête - Statistiques suiveurs
+      this.executeQuery(`
+        SELECT 
+          COUNT(*) as total_suiveurs,
+          SUM(CASE WHEN sa.notifications_actives = TRUE THEN 1 ELSE 0 END) as suiveurs_actifs_notifications,
+          COUNT(DISTINCT CASE WHEN u.date_inscription >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN u.id_utilisateur END) as nouveaux_suiveurs_30j,
+          AVG(DATEDIFF(CURDATE(), sa.date_suivi)) as duree_moyenne_suivi_jours,
+          (SELECT COUNT(DISTINCT r.id_utilisateur) 
+           FROM Reservation r 
+           JOIN Propriete p ON r.id_propriete = p.id_propriete 
+           WHERE p.id_utilisateur = ? 
+           AND r.id_utilisateur IN (SELECT id_suiveur FROM SuiviAgence WHERE id_suivi_utilisateur = ?)
+          ) as suiveurs_avec_reservations
+        FROM SuiviAgence sa
+        JOIN Utilisateur u ON sa.id_suiveur = u.id_utilisateur
+        WHERE sa.id_suivi_utilisateur = ?
+      `, [id_agence, id_agence, id_agence]),
+      
+      // ✅ Deuxième requête - Statistiques réservations
+      this.executeQuery(`
+        SELECT 
+          COUNT(*) as total_reservations,
+          SUM(CASE WHEN r.statut = 'confirme' THEN 1 ELSE 0 END) as confirmees,
+          SUM(CASE WHEN r.statut = 'attente' THEN 1 ELSE 0 END) as attente,
+          SUM(CASE WHEN r.date_visite >= CURDATE() AND r.statut = 'confirme' THEN 1 ELSE 0 END) as a_venir
+        FROM Reservation r
+        JOIN Propriete p ON r.id_propriete = p.id_propriete
+        WHERE p.id_utilisateur = ?
+      `, [id_agence]),
+      
+      // ✅ Troisième requête - Statistiques propriétés
+      this.executeQuery(`
+        SELECT 
+          COUNT(*) as total_proprietes,
+          SUM(CASE WHEN statut = 'disponible' THEN 1 ELSE 0 END) as disponibles,
+          SUM(CASE WHEN type_transaction = 'location' THEN 1 ELSE 0 END) as locations,
+          SUM(CASE WHEN type_transaction = 'vente' THEN 1 ELSE 0 END) as ventes,
+          AVG(CASE WHEN statut = 'disponible' THEN prix END) as prix_moyen
+        FROM Propriete
+        WHERE id_utilisateur = ?
+      `, [id_agence]),
+      
+      // ✅ Quatrième requête - Statistiques revenus
+      this.executeQuery(`
+        SELECT 
+          COALESCE(SUM(montant), 0) as total_revenus,
+          COALESCE(SUM(CASE WHEN date_paiement >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN montant END), 0) as revenus_30j,
+          COUNT(DISTINCT id_utilisateur) as clients_payants
+        FROM Paiement
+        WHERE id_reservation IN (
+          SELECT r.id_reservation 
           FROM Reservation r
           JOIN Propriete p ON r.id_propriete = p.id_propriete
           WHERE p.id_utilisateur = ?
-        `, [id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            COUNT(*) as total_proprietes,
-            SUM(CASE WHEN statut = 'disponible' THEN 1 ELSE 0 END) as disponibles,
-            SUM(CASE WHEN type_transaction = 'location' THEN 1 ELSE 0 END) as locations,
-            SUM(CASE WHEN type_transaction = 'vente' THEN 1 ELSE 0 END) as ventes,
-            AVG(CASE WHEN statut = 'disponible' THEN prix END) as prix_moyen
-          FROM Propriete
-          WHERE id_utilisateur = ?
-        `, [id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            COALESCE(SUM(montant), 0) as total_revenus,
-            COALESCE(SUM(CASE WHEN date_paiement >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN montant END), 0) as revenus_30j,
-            COUNT(DISTINCT id_utilisateur) as clients_payants
-          FROM Paiement
-          WHERE id_reservation IN (
-            SELECT r.id_reservation 
-            FROM Reservation r
-            JOIN Propriete p ON r.id_propriete = p.id_propriete
-            WHERE p.id_utilisateur = ?
-          )
-          AND statut = 'paye'
-        `, [id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            COUNT(DISTINCT v.id_utilisateur) as visiteurs_24h,
-            COUNT(DISTINCT CASE WHEN v.date_vue >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN v.id_utilisateur END) as visiteurs_7j,
-            (SELECT COUNT(*) FROM Message m WHERE m.id_destinataire = ? AND m.est_lu = FALSE) as messages_non_lus
-          FROM VuePropriete v
-          JOIN Propriete p ON v.id_propriete = p.id_propriete
-          WHERE p.id_utilisateur = ?
-          AND v.date_vue >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
-        `, [id_agence, id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            DATE_FORMAT(date_suivi, '%Y-%m') as mois,
-            COUNT(*) as nouveaux_suiveurs
-          FROM SuiviAgence
-          WHERE id_suivi_utilisateur = ?
-          AND date_suivi >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
-          GROUP BY DATE_FORMAT(date_suivi, '%Y-%m')
-          ORDER BY mois DESC
-          LIMIT 6
-        `, [id_agence]),
-        
-        this.executeQuery(`
-          SELECT 
-            p.id_propriete,
-            p.titre,
-            p.ville,
-            p.prix,
-            p.type_transaction,
-            (SELECT COUNT(*) FROM VuePropriete v WHERE v.id_propriete = p.id_propriete AND v.date_vue >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) as vues_30j,
-            (SELECT COUNT(*) FROM Favoris f WHERE f.id_propriete = p.id_propriete) as favoris
-          FROM Propriete p
-          WHERE p.id_utilisateur = ?
-          AND p.statut = 'disponible'
-          ORDER BY vues_30j DESC, favoris DESC
-          LIMIT 5
-        `, [id_agence])
-      ]);
+        )
+        AND statut = 'paye'
+      `, [id_agence]),
+      
+      // ✅ Cinquième requête - Activité récente (retirer la sous-requête Notification)
+      this.executeQuery(`
+        SELECT 
+          COUNT(DISTINCT v.id_utilisateur) as visiteurs_24h,
+          COUNT(DISTINCT CASE WHEN v.date_vue >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN v.id_utilisateur END) as visiteurs_7j
+        FROM VuePropriete v
+        JOIN Propriete p ON v.id_propriete = p.id_propriete
+        WHERE p.id_utilisateur = ?
+        AND v.date_vue >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+      `, [id_agence]),
+      
+      // ✅ Sixième requête - Croissance suiveurs
+      this.executeQuery(`
+        SELECT 
+          DATE_FORMAT(date_suivi, '%Y-%m') as mois,
+          COUNT(*) as nouveaux_suiveurs
+        FROM SuiviAgence
+        WHERE id_suivi_utilisateur = ?
+        AND date_suivi >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(date_suivi, '%Y-%m')
+        ORDER BY mois DESC
+        LIMIT 6
+      `, [id_agence]),
+      
+      // ✅ Septième requête - Top propriétés
+      this.executeQuery(`
+        SELECT 
+          p.id_propriete,
+          p.titre,
+          p.ville,
+          p.prix,
+          p.type_transaction,
+          (SELECT COUNT(*) FROM VuePropriete v WHERE v.id_propriete = p.id_propriete AND v.date_vue >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)) as vues_30j,
+          (SELECT COUNT(*) FROM Favoris f WHERE f.id_propriete = p.id_propriete) as favoris
+        FROM Propriete p
+        WHERE p.id_utilisateur = ?
+        AND p.statut = 'disponible'
+        ORDER BY vues_30j DESC, favoris DESC
+        LIMIT 5
+      `, [id_agence])
+    ]);
 
-      return {
-        suiveurs: suiveursStats[0] || {},
-        reservations: reservationsStats[0] || {},
-        proprietes: proprietesStats[0] || {},
-        revenus: revenueStats[0] || {},
-        activite: activiteRecent[0] || {},
-        croissance: {
-          suiveurs_mensuels: croissanceSuiveurs,
-          tendance_suiveurs: croissanceSuiveurs.length > 1 
-            ? ((croissanceSuiveurs[0]?.nouveaux_suiveurs || 0) - (croissanceSuiveurs[1]?.nouveaux_suiveurs || 0)) 
-            : 0
-        },
-        top_proprietes: topProprietes,
-        resume: {
-          score_engagement: suiveursStats[0]?.total_suiveurs > 0 
-            ? ((suiveursStats[0].suiveurs_actifs / suiveursStats[0].total_suiveurs) * 100).toFixed(2)
-            : '0.00',
-          taux_conversion: suiveursStats[0]?.total_suiveurs > 0 
-            ? ((reservationsStats[0]?.total_reservations / suiveursStats[0].total_suiveurs) * 100).toFixed(2)
-            : '0.00'
-        }
-      };
-    } catch (error) {
-      console.error('Erreur récupération métriques dashboard:', error);
-      throw error;
-    }
+    return {
+      suiveurs: suiveursStats[0] || {},
+      reservations: reservationsStats[0] || {},
+      proprietes: proprietesStats[0] || {},
+      revenus: revenueStats[0] || {},
+      activite: activiteRecent[0] || {},
+      croissance: {
+        suiveurs_mensuels: croissanceSuiveurs,
+        tendance_suiveurs: croissanceSuiveurs.length > 1 
+          ? ((croissanceSuiveurs[0]?.nouveaux_suiveurs || 0) - (croissanceSuiveurs[1]?.nouveaux_suiveurs || 0)) 
+          : 0
+      },
+      top_proprietes: topProprietes,
+      notifications: {
+        non_lues: notificationsNonLues, // <-- UTILISER LA MÉTHODE Notification
+        ...notificationsStats
+      },
+      resume: {
+        score_engagement: suiveursStats[0]?.total_suiveurs > 0 
+          ? ((suiveursStats[0].suiveurs_actifs_notifications / suiveursStats[0].total_suiveurs) * 100).toFixed(2)
+          : '0.00',
+        taux_conversion: suiveursStats[0]?.total_suiveurs > 0 
+          ? ((reservationsStats[0]?.total_reservations / suiveursStats[0].total_suiveurs) * 100).toFixed(2)
+          : '0.00'
+      }
+    };
+  } catch (error) {
+    console.error('Erreur récupération métriques dashboard:', error);
+    throw error;
   }
+}
 
   // =========================================================================
   // MÉTHODES CLIENTS/SUIVEURS (POUR AGENCES)

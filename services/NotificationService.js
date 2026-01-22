@@ -451,24 +451,12 @@ const calculateSimilarity = (str1, str2) => {
   return matches / maxLength;
 };
 
-/**
- * Vérifie si une propriété correspond aux critères d'une recherche
- */
-const propertyMatchesCriteria = (property, criteria) => {
+// Modifiez propertyMatchesCriteria pour utiliser les champs individuels :
+const propertyMatchesCriteria = (property, alert) => {
+  console.log('La propriété à vérifier *****************************************:', {property, alert});
   try {
-    let criteres;
-    if (typeof criteria === 'string') {
-      try {
-        criteres = JSON.parse(criteria);
-      } catch (parseError) {
-        console.error('❌ Erreur parsing JSON critères:', parseError);
-        return false;
-      }
-    } else {
-      criteres = criteria;
-    }
     
-    console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, criteres);
+    console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, alert);
 
     const normalizeText = (text) => {
       if (!text) return '';
@@ -482,8 +470,8 @@ const propertyMatchesCriteria = (property, criteria) => {
     };
 
     // ✅ CRITÈRE OBLIGATOIRE: La ville
-    if (criteres.ville && property.ville) {
-      const villeRecherche = normalizeText(criteres.ville);
+    if (alert.ville && property.ville) {
+      const villeRecherche = normalizeText(alert.ville);
       const villePropriete = normalizeText(property.ville);
       
       const villeMatch = villePropriete.includes(villeRecherche) || 
@@ -491,30 +479,30 @@ const propertyMatchesCriteria = (property, criteria) => {
                         calculateSimilarity(villePropriete, villeRecherche) > 0.7;
       
       if (!villeMatch) {
-        console.log(`❌ Ville ne correspond pas: ${criteres.ville} vs ${property.ville}`);
+        console.log(`❌ Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
         return false;
       }
-      console.log(`✅ Ville correspond: ${criteres.ville} vs ${property.ville}`);
+      console.log(`✅ Ville correspond: ${alert.ville} vs ${property.ville}`);
     } else {
       console.log(`❌ Aucune ville spécifiée dans les critères`);
       return false;
     }
 
     // Vérifier le type de transaction
-    if (criteres.type_transaction && criteres.type_transaction !== property.type_transaction) {
-      console.log(`❌ Type transaction ne correspond pas: ${criteres.type_transaction} vs ${property.type_transaction}`);
+    if (alert.type_transaction && alert.type_transaction !== property.type_transaction) {
+      console.log(`❌ Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
       return false;
     }
 
     // Vérifier le type de propriété
-    if (criteres.type_propriete && criteres.type_propriete !== property.type_propriete) {
-      console.log(`❌ Type propriété ne correspond pas: ${criteres.type_propriete} vs ${property.type_propriete}`);
+    if (alert.type_propriete && alert.type_propriete !== property.type_propriete) {
+      console.log(`❌ Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
       return false;
     }
 
     // Vérifier le quartier
-    if (criteres.quartier && property.quartier) {
-      const quartierRecherche = normalizeText(criteres.quartier);
+    if (alert.quartier && property.quartier) {
+      const quartierRecherche = normalizeText(alert.quartier);
       const quartierPropriete = normalizeText(property.quartier);
       
       const quartierMatch = quartierPropriete.includes(quartierRecherche) || 
@@ -522,14 +510,14 @@ const propertyMatchesCriteria = (property, criteria) => {
                            calculateSimilarity(quartierPropriete, quartierRecherche) > 0.6;
       
       if (!quartierMatch) {
-        console.log(`❌ Quartier ne correspond pas: ${criteres.quartier} vs ${property.quartier}`);
+        console.log(`❌ Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
         return false;
       }
     }
 
     // Vérifier le prix minimum
-    if (criteres.minPrice && property.prix) {
-      const prixMin = parseFloat(criteres.minPrice);
+    if (alert.prix_min && property.prix) {
+      const prixMin = parseFloat(alert.prix_min);
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete < prixMin) {
@@ -539,20 +527,14 @@ const propertyMatchesCriteria = (property, criteria) => {
     }
 
     // Vérifier le prix maximum
-    if (criteres.maxPrice && property.prix) {
-      const prixMax = parseFloat(criteres.maxPrice);
+    if (alert.prix_max && property.prix) {
+      const prixMax = parseFloat(alert.prix_max);
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete > prixMax) {
         console.log(`❌ Prix trop élevé: ${prixPropriete} > ${prixMax}`);
         return false;
       }
-    }
-
-    // Vérifier le statut
-    if (criteres.statut && criteres.statut !== property.statut) {
-      console.log(`❌ Statut ne correspond pas: ${criteres.statut} vs ${property.statut}`);
-      return false;
     }
 
     console.log(`🎉 PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
@@ -667,12 +649,27 @@ const getActiveAlerts = async () => {
     console.log('🔔 Récupération des alertes actives...');
     
     const query = `
-      SELECT r.id_recherche, r.id_utilisateur, r.criteres, r.nom_recherche,
-             u.expo_push_token, u.fullname
-      FROM Recherche r
-      JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
-      WHERE r.est_alerte_active = TRUE
-      AND u.est_actif = TRUE
+      SELECT 
+        a.id_alerte, 
+        a.id_utilisateur, 
+        a.nom_alerte, 
+        a.type_propriete, 
+        a.type_transaction, 
+        a.ville, 
+        a.quartier, 
+        a.prix_min,
+        a.prix_max,
+        a.surface_min,
+        a.surface_max,
+        a.nbr_chambres_min,
+        a.nbr_salles_bain_min,
+        a.equipements,
+        u.fullname,
+        u.expo_push_token
+      FROM Alerte a
+      JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
+      WHERE a.est_alerte_active = 1
+      AND u.est_actif = 1
       AND u.expo_push_token IS NOT NULL
       AND u.expo_push_token != ''
     `;
@@ -933,18 +930,19 @@ const notifyUsersWithMatchingAlerts = async (property) => {
 
     for (const alert of activeAlerts) {
       try {
-        console.log(`🔍 Vérification alerte ${alert.id_recherche} pour ${alert.fullname}...`);
+        console.log(`🔍 Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
         
-        const matches = propertyMatchesCriteria(property, alert.criteres);
+        // Passez l'objet alert complet, pas alert.criteres
+        const matches = propertyMatchesCriteria(property, alert);
         
         if (matches) {
-          console.log(`🎉 ALERTE ${alert.id_recherche} CORRESPOND!`);
+          console.log(`🎉 ALERTE ${alert.id_alerte} CORRESPOND!`);
           matchesFound++;
           usersToNotify.push(alert);
         }
         
       } catch (alertError) {
-        console.error(`❌ Erreur vérification alerte:`, alertError.message);
+        console.error(`❌ Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
       }
     }
 
@@ -969,7 +967,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
             await saveAlertNotificationToDatabase(
               userAlert.id_utilisateur, 
               property, 
-              userAlert.nom_recherche, 
+              userAlert.nom_alerte, // nom_alerte, pas nom_recherche
               notification.body
             );
             
@@ -1186,20 +1184,21 @@ const notifyOwnerNewReservation = async (reservation) => {
   }
 };
 
-/**
- * Notification au visiteur : confirmation de demande
- */
 const notifyVisitorReservationRequest = async (reservation) => {
   try {
-    console.log('✅ Notification confirmation demande au visiteur:', reservation.id_reservation);
+    console.log('✅ Notification confirmation demande au visiteur:', reservation);
     
-    const reservationDetails = await getReservationDetails(reservation.id_reservation);
+    // Si reservation est un objet, extraire l'ID
+    const reservationId = reservation.id_reservation || reservation;
+    
+    const reservationDetails = await getReservationDetails(reservationId);
+    
     if (!reservationDetails) {
       console.log('❌ Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
-    const { visiteur_token, visiteur_nom, propriete_titre, date_visite, heure_visite } = reservationDetails;
+    const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
       console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
@@ -1211,9 +1210,9 @@ const notifyVisitorReservationRequest = async (reservation) => {
     
     const data = {
       type: 'RESERVATION_REQUEST_SENT',
-      reservationId: reservation.id_reservation,
-      propertyId: reservation.id_propriete,
-      status: reservation.statut,
+      reservationId: reservationDetails.id_reservation,
+      propertyId: reservationDetails.id_propriete,
+      status: reservationDetails.statut,
       action: 'view_reservation',
       screen: 'reservation-details',
       timestamp: new Date().toISOString()
@@ -1224,7 +1223,7 @@ const notifyVisitorReservationRequest = async (reservation) => {
       title, 
       body, 
       data,
-      reservation.id_utilisateur,
+      reservationDetails.id_utilisateur,
       'reservation_request_sent'
     );
 
@@ -1481,7 +1480,7 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
     return { success: false, error: error.message };
   }
 };
-
+ 
 /**
  * Notification rappel de visite (24h avant)
  */

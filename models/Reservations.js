@@ -216,7 +216,7 @@ static async create(reservationData) {
          WHERE id_propriete = ? 
          AND date_visite = ? 
          AND heure_visite = ? 
-         AND statut IN ('confirme')`,
+         AND statut IN ('confirme')`, 
         [id_propriete, date_visite, heure_visite]
       );
 

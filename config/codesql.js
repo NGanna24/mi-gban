@@ -7,7 +7,7 @@ const creation_tables = `
 CREATE TABLE IF NOT EXISTS Utilisateur (
     id_utilisateur INT PRIMARY KEY AUTO_INCREMENT,  
     fullname VARCHAR(100) NOT NULL,
-    telephone VARCHAR(20),
+    telephone VARCHAR(20), 
     role ENUM('client', 'agent', 'admin') DEFAULT 'client',
     date_inscription DATETIME DEFAULT CURRENT_TIMESTAMP,
     est_actif BOOLEAN DEFAULT TRUE,

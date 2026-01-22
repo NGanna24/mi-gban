@@ -5,94 +5,126 @@ import { notifyOwnerNewReservation,notifyVisitorReservationRequest,notifyReserva
 import User from '../models/Utilisateur.js';
 
 class ReservationController {
+   
+
+static async create(req, res) {
+  console.log('📝 Création réservation simplifiée:', req.body);
   
+  try {
+    const { 
+      id_utilisateur,
+      id_propriete,
+      date_visite,
+      heure_visite,
+      nombre_personnes = 1,
+      notes = '',
+      telephone_visiteur = ''
+    } = req.body;
 
-  static async create(req, res) {
-    console.log('📝 Création réservation simplifiée:', req.body);
-    
-    try {
-      const { 
-        id_utilisateur,
-        id_propriete,
-        date_visite,
-        heure_visite,
-        nombre_personnes = 1,
-        notes = '',
-        telephone_visiteur = ''
-      } = req.body;
-
-      // Validation des données requises
-      if (!id_utilisateur || !id_propriete || !date_visite || !heure_visite) {
-        return res.status(400).json({ 
-          success: false,
-          message: 'Données manquantes: id_utilisateur, id_propriete, date_visite et heure_visite sont requis.' 
-        });
-      }
-
-      // Vérifier que l'utilisateur existe
-      const userExists = await User.exists(id_utilisateur);
-      if (!userExists) {
-        return res.status(404).json({
-          success: false,
-          message: 'Utilisateur non trouvé.'
-        });
-      }
-
-      // Vérifier que la propriété existe
-      const propriete = await Propriete.findById(id_propriete);
-      if (!propriete) {
-        return res.status(404).json({
-          success: false,
-          message: 'Propriété non trouvée.'
-        });
-      }
-
-      // Vérifier la disponibilité du créneau
-      const isAvailable = await Reservation.checkAvailability(id_propriete, date_visite, heure_visite);
-      if (!isAvailable) {
-        return res.status(400).json({
-          success: false,
-          message: 'Ce créneau est déjà réservé. Veuillez choisir un autre horaire.'
-        });
-      }
-
-      // Créer la réservation directement
-      const reservationId = await Reservation.create({
-        id_utilisateur,
-        id_propriete,
-        date_visite,
-        heure_visite,
-        nombre_personnes,
-        notes,
-        telephone_visiteur
-      });
-
-      // Récupérer les détails complets de la réservation créée
-
-const newReservation = await Reservation.findById(reservationId);
-
-// Notifier le propriétaire
- notifyOwnerNewReservation(newReservation);
-
-// Notifier le visiteur
- notifyVisitorReservationRequest(newReservation);
-
-
-      res.status(201).json({
-        success: true,
-        message: 'Réservation créée avec succès',
-        reservation: newReservation
-      });
-
-    } catch (error) {
-      console.error('❌ Erreur création réservation:', error);
-      res.status(500).json({ 
+    // Validation des données requises
+    if (!id_utilisateur || !id_propriete || !date_visite || !heure_visite) {
+      return res.status(400).json({ 
         success: false,
-        message: 'Erreur lors de la création de la réservation.',
-        error: error.message 
+        message: 'Données manquantes: id_utilisateur, id_propriete, date_visite et heure_visite sont requis.' 
       });
     }
+
+    // Vérifier que l'utilisateur existe
+    const userExists = await User.exists(id_utilisateur);
+    if (!userExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé.'
+      });
+    }
+
+    // Vérifier que la propriété existe
+    const propriete = await Propriete.findById(id_propriete);
+    if (!propriete) {
+      return res.status(404).json({
+        success: false,
+        message: 'Propriété non trouvée.'
+      });
+    }
+
+    // Vérifier la disponibilité du créneau
+    const isAvailable = await Reservation.checkAvailability(id_propriete, date_visite, heure_visite);
+    if (!isAvailable) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ce créneau est déjà réservé. Veuillez choisir un autre horaire.'
+      });
+    }
+
+    // Créer la réservation directement
+    const reservationId = await Reservation.create({
+      id_utilisateur,
+      id_propriete,
+      date_visite,
+      heure_visite,
+      nombre_personnes,
+      notes,
+      telephone_visiteur
+    });
+
+    // Récupérer les détails complets de la réservation créée
+    const newReservation = await Reservation.findById(reservationId);
+
+    // 🔔 ENVOYER LES NOTIFICATIONS AVEC GESTION D'ERREUR
+    let ownerNotificationResult = { success: false, error: 'Non exécutée' };
+    let visitorNotificationResult = { success: false, error: 'Non exécutée' };
+
+    try {
+      // 1. Notifier le propriétaire (NOUVELLE RÉSERVATION)
+      console.log('🔔 Notification au propriétaire...');
+      ownerNotificationResult = await notifyOwnerNewReservation(newReservation);
+      console.log('✅ Notification propriétaire:', ownerNotificationResult.success ? 'OK' : 'ÉCHEC');
+      
+      if (!ownerNotificationResult.success) {
+        console.error('⚠️ Échec notification propriétaire:', ownerNotificationResult.error);
+      }
+    } catch (ownerError) {
+      console.error('❌ Erreur notification propriétaire:', ownerError);
+      ownerNotificationResult = { success: false, error: ownerError.message };
+    }
+
+    try {
+      // 2. Notifier le visiteur (CONFIRMATION DE DEMANDE)
+      console.log('🔔 Notification au visiteur...');
+      visitorNotificationResult = await notifyVisitorReservationRequest(newReservation);
+      console.log('✅ Notification visiteur:', visitorNotificationResult.success ? 'OK' : 'ÉCHEC');
+      
+      if (!visitorNotificationResult.success) {
+        console.error('⚠️ Échec notification visiteur:', visitorNotificationResult.error);
+      }
+    } catch (visitorError) {
+      console.error('❌ Erreur notification visiteur:', visitorError);
+      visitorNotificationResult = { success: false, error: visitorError.message };
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Réservation créée avec succès',
+      reservation: newReservation,
+      notifications: {
+        owner: ownerNotificationResult.success,
+        visitor: visitorNotificationResult.success,
+        details: {
+          owner_error: !ownerNotificationResult.success ? ownerNotificationResult.error : null,
+          visitor_error: !visitorNotificationResult.success ? visitorNotificationResult.error : null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur création réservation *****:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Erreur lors de la création de la réservation.',
+      error: error.message 
+    });
   }
+}
 
   // ✅ Récupérer les réservations d'un utilisateur
   static async getReservationsByUser(req, res) {
@@ -532,6 +564,6 @@ static async updateStatus(req, res) {
   }
 
 
-}
+} 
 
 export default ReservationController; 

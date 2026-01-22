@@ -850,22 +850,19 @@ export const suiviController = {
         success: false,
         message: 'Erreur lors de la récupération des métriques d\'engagement'
       });
-    }
+    } 
   },
 
-// Dans AgenceController.js - version corrigée
 async getReservationsByAgency(req, res) {
   try {
     const id_agence = req.user.id;
     const filters = req.query;
-    
-    // Log détaillé pour debug
+     
     console.log('=== DEBUG RESERVATIONS ===');
     console.log('Agence ID:', id_agence);
     console.log('Filtres reçus:', filters);
     console.log('User:', req.user);
     
-    // Extraire les paramètres avec valeurs par défaut
     const { 
       page = 1, 
       limit = 20,
@@ -875,8 +872,6 @@ async getReservationsByAgency(req, res) {
       id_propriete,
       id_client 
     } = req.query;
-
-    console.log('📅 Réservations agence - Agence:', id_agence, 'Filtres:', filters);
 
     // ✅ VALIDER LES PARAMÈTRES
     if (page && isNaN(parseInt(page))) {
@@ -919,7 +914,8 @@ async getReservationsByAgency(req, res) {
       success: result.success,
       total: result.data?.total,
       reservationsCount: result.data?.reservations?.length,
-      stats: result.data?.stats
+      // ✅ IMPORTANT: Vérifier les deux noms possibles
+      stats: result.data?.stats || result.data?.statistiques
     });
 
     // Vérifier si c'est une réponse d'erreur
@@ -931,10 +927,19 @@ async getReservationsByAgency(req, res) {
       });
     }
 
-    // ✅ RETOURNER LE RÉSULTAT AVEC LA BONNE STRUCTURE
+    // ✅ RETOURNER LE RÉSULTAT EN ASSURANT LA COMPATIBILITÉ
+    const responseData = {
+      ...result.data,
+      // ✅ Standardiser le nom en "stats" pour le frontend
+      stats: result.data?.stats || result.data?.statistiques || {
+        total_reservations: result.data?.total || 0,
+        par_statut: {}
+      }
+    };
+
     res.json({
       success: true,
-      data: result.data
+      data: responseData
     });
 
   } catch (error) {
@@ -1413,31 +1418,69 @@ async updateReservationStatus(req, res) {
     });
   }
 },
+async getDashboardMetrics(req, res) {
+  try {
+    const id_agence = req.user.id;
 
-  /**
-   * Métriques du dashboard
-   */
-  async getDashboardMetrics(req, res) {
-    try {
-      const id_agence = req.user.id;
+    console.log('📈 Métriques dashboard - Agence:', id_agence);
 
-      console.log('📈 Métriques dashboard - Agence:', id_agence);
+    // 1. Récupérer les métriques via Agence.getDashboardMetrics
+    const metrics = await Agence.getDashboardMetrics(id_agence);
 
-      const metrics = await Agence.getDashboardMetrics(id_agence);
+    // 2. Formater la réponse pour correspondre à ce que StatsCards attend
+    const formattedResponse = {
+      success: true,
+      data: {
+        // Propriétés
+        totalProperties: metrics.proprietes?.total_proprietes || 0,
+        // Messages (notifications non lues) - CORRECTION ICI
+        totalMessages: metrics.notifications?.non_lues || 0,
+        // Réservations
+        totalReservations: metrics.reservations?.total_reservations || 0,
+        // Clients (suiveurs)
+        totalClients: metrics.suiveurs?.total_suiveurs || 0,
+        // Revenus
+        revenue: metrics.revenus?.total_revenus || 0,
+        // Autres métriques
+        avgPropertyPrice: metrics.proprietes?.prix_moyen || 0,
+        engagementRate: metrics.resume?.score_engagement || 0,
+        propertiesTrend: metrics.croissance?.tendance_suiveurs || 0,
+        // Optionnel: Ajouter d'autres données
+        notificationsData: metrics.notifications || {}
+      }
+    };
 
-      res.json({
-        success: true,
-        data: metrics
-      });
+    console.log('✅ Métriques formatées:', {
+      totalProperties: formattedResponse.data.totalProperties,
+      totalMessages: formattedResponse.data.totalMessages, // Ce devrait être 74, pas 0
+      totalReservations: formattedResponse.data.totalReservations,
+      totalClients: formattedResponse.data.totalClients,
+      revenue: formattedResponse.data.revenue,
+      notificationsData: formattedResponse.data.notificationsData
+    });
 
-    } catch (error) {
-      console.error('❌ Erreur métriques dashboard:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la récupération des métriques du dashboard'
-      });
-    }
-  },
+    res.json(formattedResponse);
+
+  } catch (error) {
+    console.error('❌ Erreur métriques dashboard:', error);
+    
+    // Réponse d'erreur formatée
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération des métriques du dashboard',
+      data: {
+        totalProperties: 0,
+        totalMessages: 0, // ← Par défaut 0 en cas d'erreur
+        totalReservations: 0,
+        totalClients: 0,
+        revenue: 0,
+        avgPropertyPrice: 0,
+        engagementRate: 0,
+        propertiesTrend: 0
+      }
+    });
+  }
+},
 
   /**
    * Propriétés les plus performantes
