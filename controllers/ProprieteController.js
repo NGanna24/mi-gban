@@ -1674,24 +1674,36 @@ async getSuggestionsPersonnalisees(req, res) {
     }
   },
 
-// ✅ Mettre à jour une propriété - VERSION SIMPLIFIÉE
+// ✅ Mettre à jour une propriété - VERSION COMPLÈTE AVEC GESTION DES CONTRAINTES
 async modifierPropriete(req, res) {
+  const connection = await pool.getConnection();
+  
   try {
+    await connection.beginTransaction();
+
     const { id_propriete } = req.params;
     const updates = req.body;
 
     console.log('✏️ Mise à jour propriété ID:', id_propriete);
     console.log('📤 Données reçues:', updates);
 
-    const propriete = await Propriete.findById(id_propriete);
-    if (!propriete) {
+    // 1. Vérifier si la propriété existe
+    const [proprieteRows] = await connection.execute(
+      'SELECT * FROM Propriete WHERE id_propriete = ?',
+      [id_propriete]
+    );
+
+    if (proprieteRows.length === 0) {
+      await connection.rollback();
       return res.status(404).json({
         success: false,
         message: 'Propriété non trouvée'
       });
     }
 
-    // ✅ LISTE DE TOUS LES CHAMPS DE LA TABLE Propriete
+    const proprieteExistante = proprieteRows[0];
+
+    // 2. Liste des champs autorisés
     const allowedFields = [
       'titre', 'description', 'prix', 'longitude', 'latitude', 
       'quartier', 'ville', 'pays', 'statut', 'type_propriete',
@@ -1700,7 +1712,7 @@ async modifierPropriete(req, res) {
       'compteur_likes', 'compteur_partages', 'compteur_commentaires'
     ];
 
-    // Filtrer les mises à jour
+    // 3. Préparer les données de mise à jour
     const updateData = {};
     Object.keys(updates).forEach(key => {
       if (allowedFields.includes(key) && updates[key] !== undefined) {
@@ -1708,15 +1720,128 @@ async modifierPropriete(req, res) {
       }
     });
 
-    console.log('🔄 Données à mettre à jour:', updateData);
+    console.log('🔄 Données nettoyées pour mise à jour:', updateData);
 
-    // Mettre à jour la propriété
-    await propriete.update(updateData);
+    // 4. DÉTERMINER LE TYPE DE TRANSACTION (nouveau ou existant)
+    const typeTransaction = updateData.type_transaction || proprieteExistante.type_transaction;
+    console.log('🎯 Type transaction déterminé:', typeTransaction);
 
-    // ✅ RÉCUPÉRER LA PROPRIÉTÉ MISE À JOUR
+    // 5. CORRECTION CRITIQUE : GÉRER LES CHAMPS SPÉCIFIQUES SELON LE TYPE DE TRANSACTION
+    if (typeTransaction === 'vente') {
+      // Pour vente : caution = 0, periode_facturation = NULL
+      updateData.caution = 0;
+      updateData.periode_facturation = null;
+      updateData.charges_comprises = false;
+      updateData.duree_min_sejour = 1;
+      
+      console.log('✅ Transaction vente : champs corrigés:', {
+        caution: updateData.caution,
+        periode_facturation: updateData.periode_facturation,
+        charges_comprises: updateData.charges_comprises,
+        duree_min_sejour: updateData.duree_min_sejour
+      });
+      
+    } else if (typeTransaction === 'location') {
+      // Pour location : calculer la caution automatiquement
+      const prix = updateData.prix || proprieteExistante.prix;
+      
+      if (prix) {
+        updateData.caution = parseFloat(prix) * 3;
+        console.log(`✅ Transaction location : caution calculée = ${prix} * 3 = ${updateData.caution}`);
+      }
+      
+      // S'assurer que periode_facturation est valide
+      if (!updateData.periode_facturation || 
+          !['jour', 'semaine', 'mois', 'an', 'saison'].includes(updateData.periode_facturation)) {
+        updateData.periode_facturation = 'mois';
+        console.log('✅ Transaction location : période facturation par défaut = mois');
+      }
+      
+      // S'assurer que charges_comprises est un boolean
+      if (updateData.charges_comprises !== undefined) {
+        updateData.charges_comprises = Boolean(updateData.charges_comprises);
+      } else {
+        updateData.charges_comprises = false;
+      }
+      
+      // S'assurer que duree_min_sejour est au moins 1
+      if (!updateData.duree_min_sejour || updateData.duree_min_sejour < 1) {
+        updateData.duree_min_sejour = 1;
+      }
+    }
+
+    // 6. VALIDATION FINALE AVANT MISE À JOUR
+    console.log('🔍 Validation finale des données:', {
+      typeTransaction,
+      caution: updateData.caution,
+      periode_facturation: updateData.periode_facturation,
+      charges_comprises: updateData.charges_comprises,
+      duree_min_sejour: updateData.duree_min_sejour
+    });
+
+    // 7. PRÉPARER LA REQUÊTE SQL
+    const fields = [];
+    const values = [];
+    
+    Object.keys(updateData).forEach(key => {
+      fields.push(`${key} = ?`);
+      values.push(updateData[key]);
+    });
+
+    // Ajouter la date de modification
+    fields.push('date_modification = NOW()');
+
+    if (fields.length > 0) {
+      values.push(id_propriete);
+      
+      const sqlQuery = `UPDATE Propriete SET ${fields.join(', ')} WHERE id_propriete = ?`;
+      console.log('📋 Requête SQL finale:', sqlQuery);
+      console.log('📋 Valeurs SQL:', values);
+
+      // 8. EXÉCUTER LA MISE À JOUR
+      await connection.execute(sqlQuery, values);
+    }
+
+    // 9. Mettre à jour les caractéristiques si fournies
+    if (updates.caracteristiques && typeof updates.caracteristiques === 'object') {
+      console.log('📝 Mise à jour des caractéristiques:', updates.caracteristiques);
+      
+      // Supprimer les anciennes caractéristiques
+      await connection.execute(
+        'DELETE FROM Propriete_Caracteristique WHERE id_propriete = ?',
+        [id_propriete]
+      );
+
+      // Insérer les nouvelles caractéristiques
+      for (const [nom, valeur] of Object.entries(updates.caracteristiques)) {
+        // Chercher l'ID de la caractéristique
+        const [caracRows] = await connection.execute(
+          'SELECT id_caracteristique FROM Caracteristique WHERE nom = ?',
+          [nom]
+        );
+
+        if (caracRows.length > 0) {
+          const id_caracteristique = caracRows[0].id_caracteristique;
+          
+          await connection.execute(
+            `INSERT INTO Propriete_Caracteristique 
+             (id_propriete, id_caracteristique, valeur) 
+             VALUES (?, ?, ?)`,
+            [id_propriete, id_caracteristique, String(valeur)]
+          );
+          
+          console.log(`✅ Caractéristique "${nom}" mise à jour: ${valeur}`);
+        } else {
+          console.warn(`⚠️ Caractéristique "${nom}" non trouvée dans la table Caracteristique`);
+        }
+      }
+    }
+
+    await connection.commit();
+    console.log('✅ Transaction commitée avec succès');
+
+    // 10. RÉCUPÉRER LA PROPRIÉTÉ MISE À JOUR
     const proprieteMiseAJour = await Propriete.findById(id_propriete);
-
-    console.log('✅ Propriété mise à jour avec succès');
 
     res.json({
       success: true,
@@ -1725,12 +1850,37 @@ async modifierPropriete(req, res) {
     });
 
   } catch (error) {
+    await connection.rollback();
     console.error('❌ Erreur modification propriété:', error);
-    res.status(500).json({
+    
+    // Gestion spécifique des erreurs de contraintes
+    let errorMessage = 'Erreur lors de la modification de la propriété';
+    let statusCode = 500;
+
+    if (error.code === 'ER_CHECK_CONSTRAINT_VIOLATED') {
+      statusCode = 400;
+      
+      if (error.sqlMessage.includes('chk_caution_only_for_location')) {
+        errorMessage = 'Erreur de validation : La caution ne peut être définie que pour les propriétés en location. Pour une vente, la caution doit être 0.';
+      } else if (error.sqlMessage.includes('chk_periode_facturation_only_for_location')) {
+        errorMessage = 'Erreur de validation : La période de facturation ne peut être définie que pour les propriétés en location.';
+      } else if (error.sqlMessage.includes('chk_charges_only_for_location')) {
+        errorMessage = 'Erreur de validation : Les charges comprises ne s\'appliquent qu\'aux locations.';
+      } else if (error.sqlMessage.includes('chk_duree_min_sejour_only_for_location')) {
+        errorMessage = 'Erreur de validation : La durée minimum de séjour ne s\'applique qu\'aux locations.';
+      }
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: 'Erreur lors de la modification de la propriété',
-      error: error.message
+      message: errorMessage,
+      error: error.code,
+      details: error.sqlMessage,
+      sql: error.sql
     });
+    
+  } finally {
+    connection.release();
   }
 },
 

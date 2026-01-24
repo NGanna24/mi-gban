@@ -534,7 +534,7 @@ INSERT IGNORE INTO Caracteristique (nom, type_valeur, categorie, est_obligatoire
 ('cuisine', 'booleen', 'interieur', FALSE, 18),
 ('terrasse', 'booleen', 'exterieur', FALSE, 19),
 
--- Caractéristiques spéciales
+-- Caractéristiques spéciales 
 ('hauteur', 'decimal', 'interieur', FALSE, 20),
 ('quai_chargement', 'booleen', 'exterieur', FALSE, 21),
 ('viabilise', 'booleen', 'exterieur', FALSE, 22),

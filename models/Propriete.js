@@ -14,7 +14,7 @@ class Propriete {
               caution = 0, charges_comprises = false, duree_min_sejour = 1) {
     
     this.id_propriete = id_propriete;
-    this.titre = titre;
+    this.titre = titre; 
     this.id_utilisateur = id_utilisateur;
     this.proprietaire = proprietaire; 
     this.type_propriete = type_propriete;
@@ -649,80 +649,329 @@ static async getMixDecouverte(limit = 15) {
     return caracteristiques;
   }
  
-  // ✏️ UPDATE - Mettre à jour une propriété
-  async update(updates) {
-    const connection = await pool.getConnection();
-    
-    try {
-      await connection.beginTransaction();
+// ✏️ UPDATE - Mettre à jour une propriété - VERSION COMPLÈTE
+async update(updates) {
+  const connection = await pool.getConnection();
+  
+  try {
+    await connection.beginTransaction();
 
-      if (!updates || typeof updates !== 'object') {
-        throw new Error('Les données de mise à jour sont invalides');
-      }
-
-      const fields = [];
-      const values = [];
-      
-      // ✅ RECALCULER LA CAUTION SI LE PRIX CHANGE
-      if (updates.prix && this.type_transaction === 'location') {
-        updates.caution = parseFloat(updates.prix) * 3;
-      }
-
-      // Mettre à jour les champs de base
-      Object.keys(updates).forEach(key => {
-        if (key !== 'id_propriete' && key !== 'caracteristiques' && this.hasOwnProperty(key)) {
-          fields.push(`${key} = ?`);
-          values.push(updates[key]);
-        }
-      });
-
-      if (fields.length > 0) {
-        values.push(this.id_propriete);
-        await connection.query(
-          `UPDATE Propriete SET ${fields.join(', ')} WHERE id_propriete = ?`,
-          values
-        );
-      }
-
-      // Mettre à jour les caractéristiques si fournies
-      if (updates.caracteristiques) {
-        await this.#updateCaracteristiques(connection, updates.caracteristiques);
-      }
-
-      // Mettre à jour l'instance
-      Object.keys(updates).forEach(key => {
-        if (key !== 'caracteristiques' && this.hasOwnProperty(key)) {
-          this[key] = updates[key];
-        }
-      });
-
-      if (updates.caracteristiques) {
-        this.caracteristiques = { ...this.caracteristiques, ...updates.caracteristiques };
-      }
-
-      await connection.commit();
-      return true;
-
-    } catch (error) {
-      await connection.rollback();
-      console.error('Erreur lors de la mise à jour de la propriété :', error);
-      throw error;
-    } finally {
-      connection.release();
+    if (!updates || typeof updates !== 'object') {
+      throw new Error('Les données de mise à jour sont invalides');
     }
-  }
 
-  // 🔧 Méthode privée pour mettre à jour les caractéristiques
-  async #updateCaracteristiques(connection, nouvellesCaracteristiques) {
+    console.log('🔄 Mise à jour propriété:', {
+      id_propriete: this.id_propriete,
+      updates: updates
+    });
+
+    // 1. DÉTERMINER LE TYPE DE TRANSACTION
+    const typeTransaction = updates.type_transaction || this.type_transaction;
+    
+    // 2. LOGIQUE DE CORRECTION AUTOMATIQUE POUR LES CONTRAINTES
+    const corrections = {};
+    
+    if (typeTransaction === 'vente') {
+      // Pour vente : obligation de mettre caution = 0 et periode_facturation = null
+      corrections.caution = 0;
+      corrections.periode_facturation = null;
+      corrections.charges_comprises = false;
+      corrections.duree_min_sejour = 1;
+      
+      console.log('✅ Transaction vente - corrections automatiques:', corrections);
+      
+    } else if (typeTransaction === 'location') {
+      // Pour location : calcul automatique de la caution
+      const prix = updates.prix || this.prix;
+      
+      if (prix) {
+        corrections.caution = parseFloat(prix) * 3;
+        console.log(`✅ Transaction location - caution calculée: ${prix} * 3 = ${corrections.caution}`);
+      }
+      
+      // Validation de la période de facturation
+      if (updates.periode_facturation && 
+          ['jour', 'semaine', 'mois', 'an', 'saison'].includes(updates.periode_facturation)) {
+        corrections.periode_facturation = updates.periode_facturation;
+      } else if (!this.periode_facturation || this.periode_facturation === '') {
+        corrections.periode_facturation = 'mois';
+        console.log('✅ Transaction location - période facturation par défaut: mois');
+      }
+      
+      // Conversion des booléens pour charges_comprises
+      if (updates.charges_comprises !== undefined) {
+        corrections.charges_comprises = Boolean(updates.charges_comprises);
+      }
+      
+      // Validation de la durée minimum de séjour
+      if (updates.duree_min_sejour !== undefined) {
+        corrections.duree_min_sejour = Math.max(1, parseInt(updates.duree_min_sejour) || 1);
+      }
+    }
+
+    // 3. FUSIONNER LES CORRECTIONS AVEC LES UPDATES
+    const finalUpdates = {
+      ...updates,
+      ...corrections
+    };
+
+    console.log('📊 Données finales après corrections:', finalUpdates);
+
+    const fields = [];
+    const values = [];
+    
+    // 4. PRÉPARER LES CHAMPS POUR LA REQUÊTE SQL
+    Object.keys(finalUpdates).forEach(key => {
+      if (key !== 'id_propriete' && key !== 'caracteristiques' && this.hasOwnProperty(key)) {
+        fields.push(`${key} = ?`);
+        values.push(finalUpdates[key]);
+      }
+    });
+
+    // Ajouter la date de modification
+    fields.push('date_modification = NOW()');
+
+    if (fields.length > 0) {
+      values.push(this.id_propriete);
+      
+      const sqlQuery = `UPDATE Propriete SET ${fields.join(', ')} WHERE id_propriete = ?`;
+      console.log('📋 SQL Update:', sqlQuery);
+      console.log('📋 Valeurs SQL:', values);
+
+      // 5. EXÉCUTER LA REQUÊTE SQL
+      await connection.query(sqlQuery, values);
+    }
+
+    // 6. Mettre à jour les caractéristiques si fournies
+    if (updates.caracteristiques) {
+      await this.#updateCaracteristiques(connection, updates.caracteristiques);
+    }
+
+    // 7. Mettre à jour l'instance en mémoire
+    Object.keys(finalUpdates).forEach(key => {
+      if (key !== 'caracteristiques' && this.hasOwnProperty(key)) {
+        this[key] = finalUpdates[key];
+      }
+    });
+
+    if (updates.caracteristiques) {
+      this.caracteristiques = { ...this.caracteristiques, ...updates.caracteristiques };
+    }
+
+    // 8. VALIDATION FINALE (optionnel mais recommandé)
+    const [verification] = await connection.execute(
+      'SELECT type_transaction, caution, periode_facturation FROM Propriete WHERE id_propriete = ?',
+      [this.id_propriete]
+    );
+    
+    console.log('🔍 Vérification après mise à jour:', verification[0]);
+
+    await connection.commit();
+    console.log('✅ Mise à jour propriété terminée avec succès');
+    return true;
+
+  } catch (error) {
+    await connection.rollback();
+    console.error('❌ Erreur lors de la mise à jour de la propriété :', error);
+    
+    // Log détaillé pour le débogage
+    console.error('📋 Détails de l\'erreur:', {
+      code: error.code,
+      errno: error.errno,
+      sqlMessage: error.sqlMessage,
+      sql: error.sql
+    });
+    
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+// 🔧 Méthode privée pour mettre à jour les caractéristiques
+async #updateCaracteristiques(connection, nouvellesCaracteristiques) {
+  try {
+    console.log('📝 Mise à jour caractéristiques:', nouvellesCaracteristiques);
+
+    // Supprimer les caractéristiques existantes
     await connection.query(
       'DELETE FROM Propriete_Caracteristique WHERE id_propriete = ?',
       [this.id_propriete]
     );
 
+    // Insérer les nouvelles caractéristiques
     if (Object.keys(nouvellesCaracteristiques).length > 0) {
-      await Propriete.#insertCaracteristiques(connection, this.id_propriete, nouvellesCaracteristiques);
+      for (const [nom, valeur] of Object.entries(nouvellesCaracteristiques)) {
+        // Chercher l'ID de la caractéristique
+        const [caracRows] = await connection.execute(
+          'SELECT id_caracteristique FROM Caracteristique WHERE nom = ?',
+          [nom]
+        );
+
+        if (caracRows.length > 0) {
+          const id_caracteristique = caracRows[0].id_caracteristique;
+          
+          await connection.execute(
+            `INSERT INTO Propriete_Caracteristique 
+             (id_propriete, id_caracteristique, valeur) 
+             VALUES (?, ?, ?)`,
+            [this.id_propriete, id_caracteristique, String(valeur)]
+          );
+          
+          console.log(`✅ Caractéristique "${nom}" mise à jour: ${valeur}`);
+        } else {
+          console.warn(`⚠️ Caractéristique "${nom}" non trouvée`);
+        }
+      }
     }
-  } 
+
+    console.log('✅ Toutes les caractéristiques mises à jour');
+
+  } catch (error) {
+    console.error('❌ Erreur mise à jour caractéristiques:', error);
+    throw error;
+  }
+}
+// 🔧 Méthode privée pour formater les propriétés avec médias
+static async #formatProprieteAvecMedias(row) {
+  try {
+    // Récupérer tous les médias de la propriété
+    let tousLesMedias = [];
+    try {
+      tousLesMedias = await Media.findByPropertyId(row.id_propriete);
+    } catch (mediaError) {
+      console.error(`❌ Erreur récupération médias ${row.id_propriete}:`, mediaError);
+    }
+
+    // Récupérer les caractéristiques principales
+    let caracteristiques = {};
+    try {
+      caracteristiques = await this.#getCaracteristiquesPrincipales(row.id_propriete, row.type_propriete);
+    } catch (caracError) {
+      console.error(`❌ Erreur caractéristiques ${row.id_propriete}:`, caracError);
+    }
+
+    // Récupérer le profil utilisateur
+    let userProfile = null;
+    try {
+      userProfile = await User.findProprietaieProfile(row.id_utilisateur);
+    } catch (userError) {
+      console.error(`❌ Erreur profil utilisateur ${row.id_utilisateur}:`, userError);
+      userProfile = {
+        id_utilisateur: row.id_utilisateur,
+        fullname: 'Propriétaire',
+        telephone: '',
+        avatar: null
+      };
+    }
+
+    // Déterminer le média principal
+    const mediaPrincipal = tousLesMedias.find(m => m.est_principale) || 
+                          tousLesMedias[0] || 
+                          { url: row.media_principal, type: row.media_type };
+
+    // Formater l'objet propriété complet
+    return {
+      // Informations de base
+      id_propriete: row.id_propriete,
+      id_utilisateur: row.id_utilisateur,
+      titre: row.titre,
+      fullname: userProfile?.fullname || 'Propriétaire',
+      telephone_utilisateur: userProfile?.telephone || '',
+      avatar: userProfile?.avatar || null,
+      description: row.description || '',
+      
+      // Prix unique
+      prix: row.prix || 0,
+      
+      // Localisation
+      longitude: row.longitude || null,
+      latitude: row.latitude || null,
+      quartier: row.quartier || '',
+      ville: row.ville || '',
+      pays: row.pays || 'CI',
+      
+      // Types et statut
+      type_propriete: row.type_propriete || 'maison',
+      type_transaction: row.type_transaction || 'location',
+      statut: row.statut || 'disponible',
+      
+      // Nouveaux champs simplifiés
+      periode_facturation: row.periode_facturation || null,
+      caution: row.caution || 0,
+      charges_comprises: Boolean(row.charges_comprises),
+      duree_min_sejour: row.duree_min_sejour || 1,
+      
+      // Dates et identifiants
+      date_creation: row.date_creation,
+      date_modification: row.date_modification,
+      slug: row.slug || null,
+      
+      // Médias
+      media_principal: mediaPrincipal?.url || row.media_principal,
+      media_type: mediaPrincipal?.type || row.media_type,
+      medias: tousLesMedias.map(media => ({
+        id_media: media.id_media,
+        url: media.url,
+        type: media.type,
+        est_principale: Boolean(media.est_principale),
+        ordre_affichage: media.ordre_affichage || 0,
+        date_creation: media.date_creation
+      })),
+      
+      // Statistiques
+      statistiques: {
+        nombre_vues: row.nombre_vues || 0,
+        nombre_likes: row.nombre_likes || 0,
+        nombre_commentaires: row.nombre_commentaires || 0,
+        nombre_partages: row.nombre_partages || 0,
+        note_moyenne: row.note_moyenne || 0
+      },
+      
+      // Caractéristiques
+      ...caracteristiques
+    };
+    
+  } catch (error) {
+    console.error(`❌ Erreur formatage propriété ${row.id_propriete}:`, error);
+    
+    // Fallback avec les données de base
+    return {
+      id_propriete: row.id_propriete,
+      id_utilisateur: row.id_utilisateur,
+      titre: row.titre || '',
+      fullname: 'Propriétaire',
+      description: row.description || '',
+      prix: row.prix || 0,
+      ville: row.ville || '',
+      quartier: row.quartier || '',
+      type_propriete: row.type_propriete || 'maison',
+      type_transaction: row.type_transaction || 'location',
+      media_principal: row.media_principal || null,
+      media_type: row.media_type || 'image',
+      medias: [],
+      statistiques: {
+        nombre_vues: row.nombre_vues || 0,
+        nombre_likes: row.nombre_likes || 0,
+        nombre_commentaires: row.nombre_commentaires || 0,
+        nombre_partages: row.nombre_partages || 0,
+        note_moyenne: row.note_moyenne || 0
+      }
+    };
+  }
+}
+
+  // // 🔧 Méthode privée pour mettre à jour les caractéristiques
+  // async #updateCaracteristiques(connection, nouvellesCaracteristiques) {
+  //   await connection.query(
+  //     'DELETE FROM Propriete_Caracteristique WHERE id_propriete = ?',
+  //     [this.id_propriete]
+  //   );
+
+  //   if (Object.keys(nouvellesCaracteristiques).length > 0) {
+  //     await Propriete.#insertCaracteristiques(connection, this.id_propriete, nouvellesCaracteristiques);
+  //   }
+  // } 
 
   // 🆕 Méthode pour ajouter/mettre à jour une caractéristique spécifique
   async setCaracteristique(nom, valeur) { 
@@ -1889,109 +2138,6 @@ static async getProprieteParVilleUser(villes_preferees = [], limit = 15, types_b
       case 'saison': return 'Prix saisonnier';
       case 'mois':
       default: return 'Prix mensuel';
-    }
-  }
-
-  // 🔧 MÉTHODE PRIVÉE POUR FORMATER LES PROPRIÉTÉS AVEC MÉDIAS
-  static async #formatProprieteAvecMedias(row) {
-    try {
-      // Charger tous les médias de la propriété
-      const tousLesMedias = await Media.findByPropertyId(row.id_propriete);
-      
-      // Charger les caractéristiques principales
-      const caracteristiques = await this.#getCaracteristiquesPrincipales(row.id_propriete, row.type_propriete);
-      
-      // Charger le profil utilisateur
-      const userProfile = await Profile.findById(row.id_utilisateur);
-      
-      // Déterminer le média principal
-      const mediaPrincipal = tousLesMedias.find(m => m.est_principale) || tousLesMedias[0];
-      
-      // Formater l'objet propriété complet
-      return {
-        // Informations de base
-        id_propriete: row.id_propriete,
-        id_utilisateur: userProfile?.id_utilisateur,
-        titre: row.titre,
-        fullname: userProfile?.fullname || 'Utilisateur inconnu',
-        telephone_utilisateur: userProfile?.telephone,
-        avatar: userProfile?.avatar,
-        description: row.description,
-        
-        // ✅ PRIX UNIQUE
-        prix: row.prix,
-        
-        // Localisation
-        longitude: row.longitude,
-        latitude: row.latitude,
-        quartier: row.quartier,
-        ville: row.ville,
-        pays: row.pays,
-        
-        // Types et statut
-        type_propriete: row.type_propriete,
-        type_transaction: row.type_transaction,
-        statut: row.statut,
-        
-        // ✅ NOUVEAUX CHAMPS SIMPLIFIÉS
-        periode_facturation: row.periode_facturation,
-        caution: row.caution,
-        charges_comprises: row.charges_comprises,
-        duree_min_sejour: row.duree_min_sejour,
-        
-        // Dates et identifiants
-        date_creation: row.date_creation,
-        slug: row.slug,
-        
-        // ✅ MÉDIAS - CORRECTION APPLIQUÉE
-        media_principal: mediaPrincipal?.url || row.media_principal,  
-        media_type: mediaPrincipal?.type || row.media_type,
-        medias: tousLesMedias.map(media => ({
-          id_media: media.id_media,
-          url: media.url,
-          type: media.type,
-          est_principale: media.est_principale,
-          ordre_affichage: media.ordre_affichage,
-          date_creation: media.date_creation
-        })),
-        
-        // Statistiques
-        statistiques: {
-          nombre_vues: row.nombre_vues || 0,
-          nombre_likes: row.nombre_likes || 0,
-          nombre_commentaires: row.nombre_commentaires || 0,
-          nombre_partages: row.nombre_partages || 0,
-          note_moyenne: row.note_moyenne || 0
-        },
-        
-        // Caractéristiques
-        ...caracteristiques
-      };
-      
-    } catch (error) {
-      console.error(`❌ Erreur formatage propriété ${row.id_propriete}:`, error);
-      
-      // Fallback avec les données de base
-      return {
-        id_propriete: row.id_propriete,
-        titre: row.titre,
-        description: row.description,
-        prix: row.prix,
-        ville: row.ville,
-        quartier: row.quartier,
-        type_propriete: row.type_propriete,
-        type_transaction: row.type_transaction,
-        media_principal: row.media_principal,
-        media_type: row.media_type,
-        medias: [],
-        statistiques: {
-          nombre_vues: row.nombre_vues || 0,
-          nombre_likes: row.nombre_likes || 0,
-          nombre_commentaires: row.nombre_commentaires || 0,
-          nombre_partages: row.nombre_partages || 0,
-          note_moyenne: row.note_moyenne || 0
-        }
-      };
     }
   }
 
