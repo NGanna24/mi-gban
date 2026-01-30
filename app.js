@@ -16,6 +16,7 @@ import agenceRoutes from './routes/agenceRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import alertesRoute from './routes/alertesRoute.js';
 import agentRoutes from './routes/agentRoutes.js';
+import  publiciteRouter from './routes/PubliciteRouter.js';
 // Dans votre app.js principal
 import PreferenceUtilisateurRoutes from './routes/PreferenceUtilisateurRoutes.js';
 import { createUploadDirs, cleanOrphanedFiles } from './middlewares/upload.js';
@@ -144,6 +145,8 @@ const uploadsDir = path.join(__dirname, 'uploads');
 const propertiesDir = path.join(uploadsDir, 'properties');
 const avatarsDir = path.join(uploadsDir, 'avatars');
 const agentDocumentsDir = path.join(uploadsDir, 'agent-documents');
+const publicitesDir = path.join(uploadsDir, 'publicites'); 
+
 
 // Initialisation des dossiers d'upload via le middleware dédié
 createUploadDirs();
@@ -212,7 +215,26 @@ app.use('/uploads/agent-documents', express.static(agentDocumentsDir, {
         }
     }
 }));
-
+// Service des fichiers statiques pour les publicités - AJOUTEZ CE BLOQUE
+app.use('/uploads/publicites', express.static(publicitesDir, {
+    setHeaders: (res, filePath) => {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache 24h
+        
+        // Définition des types MIME pour les images de publicité
+        if (filePath.endsWith('.jpg') || filePath.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
+        } else if (filePath.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+        } else if (filePath.endsWith('.gif')) {
+            res.setHeader('Content-Type', 'image/gif');
+        } else if (filePath.endsWith('.webp')) {
+            res.setHeader('Content-Type', 'image/webp');
+        } else if (filePath.endsWith('.svg')) {
+            res.setHeader('Content-Type', 'image/svg+xml');
+        }
+    }
+}));
 // ==================== ROUTES DE SANTÉ ET DIAGNOSTIC ====================
 
 /**
@@ -338,6 +360,7 @@ app.delete('/api/cleanup-orphaned-files', async (req, res) => {
 app.use('/api/proprietes', ProprieteRouter);
 app.use('/api/agence', agenceRoutes); 
 app.use('/api/agent', agentRoutes);
+app.use('/api/publicites', publiciteRouter);
 
 // Routes pour l'authentification des utilisateurs
 app.use('/api/auth', authRoutes);

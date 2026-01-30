@@ -2,7 +2,7 @@ const creation_tables = `
 -- =============================================================================
 -- TABLE POUR LE SYSTÈME D'ALERTES
 -- =============================================================================
-
+ 
 -- Table des utilisateurs
 CREATE TABLE IF NOT EXISTS Utilisateur (
     id_utilisateur INT PRIMARY KEY AUTO_INCREMENT,  
@@ -960,6 +960,90 @@ WHERE p.statut = 'disponible'
 AND s.notifications_actives = TRUE
 AND u.est_actif = TRUE
 ORDER BY p.date_creation DESC;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
+
+-- =============================================================================
+-- TABLE POUR LES PUBLICITÉS (BANNERS/CAROUSEL)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS Publicite (
+    id_publicite INT PRIMARY KEY AUTO_INCREMENT,
+    
+    -- INFORMATIONS DE BASE
+    titre VARCHAR(255) NOT NULL,
+    description TEXT,
+    image_url VARCHAR(500) NOT NULL,
+    
+    -- TYPE DE BANNIÈRE (correspond au type dans le composant React Native)
+    type_publicite ENUM('ad', 'promo', 'featured', 'partenaire', 'annonce') DEFAULT 'ad',
+    
+
+    -- CONFIGURATION D'AFFICHAGE
+    ordre_affichage INT DEFAULT 0,
+    est_actif BOOLEAN DEFAULT TRUE,
+    nombre_impressions INT DEFAULT 0,
+    nombre_clics INT DEFAULT 0,
+    taux_conversion DECIMAL(5,2) DEFAULT 0.00,
+    
+    zones_geographiques JSON, -- Villes/quartiers ciblés (NULL = toutes zones)
+
+    
+    -- DATES
+    date_debut DATETIME DEFAULT CURRENT_TIMESTAMP,
+    date_fin DATETIME NULL, -- NULL = pas de date de fin
+    
+
+    -- MÉTADONNÉES
+    createur_id INT, -- Utilisateur qui a créé la publicité
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    date_modification DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- CONTRAINTES
+    FOREIGN KEY (createur_id) REFERENCES Utilisateur(id_utilisateur) ON DELETE SET NULL,
+    
+    -- CONTRAINTES DE VALIDATION
+    CONSTRAINT chk_dates_valides CHECK (date_fin IS NULL OR date_fin > date_debut),
+    
+    -- INDEX POUR LES PERFORMANCES
+    INDEX idx_publicite_type (type_publicite),
+    INDEX idx_publicite_actif (est_actif),
+    INDEX idx_publicite_dates (date_debut, date_fin),
+    INDEX idx_publicite_ordre (ordre_affichage)
+
+);
+
+
+
+
+
 
 
 -- ==========================================================LECT 'Toutes les tables et vues ont été créées avec succès!' as message;
