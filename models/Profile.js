@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
  
 class Profile {
-  /**
+  /** 
    * Crée un profil pour un utilisateur
    */
   static async create({ id_utilisateur, email, adresse, ville, pays = 'CI', bio, avatar, preferences = {} }) {

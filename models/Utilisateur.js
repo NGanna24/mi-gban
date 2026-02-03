@@ -133,43 +133,68 @@ class User {
       throw error;
     }
   }
-  /**
-   * Trouve un utilisateur par ID d'une propriete 
-   */
-  static async findProprietaieProfile(id_utilisateur) {
-    try {
-      console.log('🔍 Recherche utilisateur par id de propriete:', id_utilisateur);
-      
-      const [rows] = await pool.execute(
-        'SELECT id_utilisateur, fullname, telephone, role, est_actif, date_inscription FROM Utilisateur WHERE id_utilisateur = ?',
-        [id_utilisateur]
-      );
-      
-      console.log('📊 Résultat recherche id_propriete:', rows.length > 0 ? 'trouvé' : 'non trouvé');
-      
-      if (rows[0]) {
-        const user = rows[0];
-        
-        // ✅ RÉCUPÉRATION DU PROFIL ASSOCIÉ
-        try {
-          const profile = await Profile.findByUserId(id_utilisateur);
-          user.profile = profile; // Attacher le profil à l'utilisateur
-          console.log('✅ Profil attaché à l\'utilisateur');
-        } catch (profileError) {
-          console.warn('⚠️ Profil non trouvé pour l\'utilisateur:', id_utilisateur);
-          user.profile = null;
-        }
-        
-        return user;
-      }
-      
-      return null;
-
-    } catch (error) {
-      console.error('❌ Erreur recherche par ID:', error);
-      throw error;
+static async findProprietaieProfile(id_utilisateur) {
+  try {
+    console.log(`🔍 Recherche utilisateur par id de propriete: ${id_utilisateur}`);
+    
+    // ✅ CORRECTION : Requête qui JOINT DIRECTEMENT les informations du profil
+    const [rows] = await pool.query(
+      `SELECT 
+        u.id_utilisateur,
+        u.fullname,
+        u.telephone,
+        u.role,
+        u.est_actif,
+        p.avatar,            -- ✅ Avatar DIRECTEMENT accessible
+        p.email,
+        p.bio,
+        p.ville,
+        p.pays
+       FROM Utilisateur u
+       LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+       WHERE u.id_utilisateur = ?`,
+      [id_utilisateur]
+    );
+    
+    if (rows.length === 0) {
+      console.log(`📊 Résultat recherche id_propriete: non trouvé`);
+      return {
+        id_utilisateur: id_utilisateur,
+        fullname: 'Propriétaire',
+        telephone: '',
+        avatar: null  // ✅ Avatar à la racine
+      };
     }
+    
+    const user = rows[0];
+    
+    // ✅ CORRECTION : S'assurer que l'avatar est au bon endroit
+    const result = {
+      id_utilisateur: user.id_utilisateur,
+      fullname: user.fullname,
+      telephone: user.telephone,
+      role: user.role,
+      est_actif: user.est_actif,
+      avatar: user.avatar,  // ✅ Avatar directement accessible
+      email: user.email,
+      bio: user.bio,
+      ville: user.ville,
+      pays: user.pays
+    };
+    
+    console.log(`✅ Profil attaché à l'utilisateur - Avatar: ${result.avatar || 'null'}`);
+    return result;
+    
+  } catch (error) {
+    console.error('❌ Erreur recherche utilisateur:', error);
+    return {
+      id_utilisateur: id_utilisateur,
+      fullname: 'Propriétaire',
+      telephone: '',
+      avatar: null
+    };
   }
+}
 
   /**
    * Vérifie si l'utilisateur existe dans la base de données

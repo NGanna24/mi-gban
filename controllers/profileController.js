@@ -20,7 +20,7 @@ export const profileController = {
           message: 'Utilisateur non trouvé'
         });  
       }
-
+ 
       // Récupérer le profil
       const profile = await Profile.findByUserId(userId);
 

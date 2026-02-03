@@ -2047,6 +2047,8 @@ async modifierPropriete(req, res) {
           try {
             if (!propriete) return null;
 
+            console.log("Debug propriété ùùùùùùùùùùùùùùùùùùùùùùùùùùùù:", propriete);
+
             // Formater les médias avec URLs complètes
             const mediasAvecUrls = propriete.medias ? propriete.medias.map(media => ({
               ...media,
@@ -2055,7 +2057,7 @@ async modifierPropriete(req, res) {
 
             // Trouver le média principal formaté
             const mediaPrincipalFormate = mediasAvecUrls.find(m => m.est_principale) || mediasAvecUrls[0];
-
+           
             return {
               ...propriete,
               // Média principal avec URL complète
@@ -2067,6 +2069,8 @@ async modifierPropriete(req, res) {
               // URL complète pour l'avatar utilisateur si présent
               avatar: propriete.avatar ? 
                       `${req.protocol}://${req.get('host')}/uploads/avatars/${propriete.avatar}` : null
+
+             
             };
           } catch (formatError) {
             console.error('❌ Erreur formatage propriété:', formatError);

@@ -12,7 +12,7 @@ class Propriete {
               // ✅ NOUVEAUX CHAMPS SIMPLIFIÉS
               type_transaction = 'location', periode_facturation = 'mois',
               caution = 0, charges_comprises = false, duree_min_sejour = 1) {
-    
+     
     this.id_propriete = id_propriete;
     this.titre = titre; 
     this.id_utilisateur = id_utilisateur;
@@ -243,7 +243,6 @@ class Propriete {
       if (proprieteRows.length === 0) return null;
 
       let proprieteData = proprieteRows[0]; 
-      console.log('Les data de la prop !!!!!!!!!!!!!!', proprieteData.id_utilisateur);
 
       // Récupérer les médias
       const media = await Media.findByPropertyId(id_propriete);
