@@ -885,11 +885,143 @@ static async getDashboardMetrics(id_agence) {
   // =========================================================================
 
 
+// static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 20) {
+//   const connection = await pool.getConnection();
+  
+//   try {
+//     console.log('Début getReservationsByAgency:', { 
+//       id_agence, 
+//       filters, 
+//       page, 
+//       limit 
+//     });
+
+//     // ✅ Utiliser validatePagination
+//     const { page: pageNum, limit: limitNum, offset } = this.validatePagination(page, limit);
+
+//     // Construire la requête
+//     const conditions = ['p.id_utilisateur = ?'];
+//     const params = [parseInt(id_agence)];
+
+//     // Appliquer les filtres
+//     if (filters.statut && filters.statut !== 'tous') {
+//       conditions.push('r.statut = ?');
+//       params.push(filters.statut);
+//     }
+
+//     if (filters.date_debut && filters.date_fin) {
+//       conditions.push('r.date_visite BETWEEN ? AND ?');
+//       params.push(filters.date_debut, filters.date_fin);
+//     }
+
+//     if (filters.id_propriete) {
+//       conditions.push('r.id_propriete = ?');
+//       params.push(parseInt(filters.id_propriete));
+//     }
+
+//     if (filters.id_client) {
+//       conditions.push('r.id_utilisateur = ?');
+//       params.push(parseInt(filters.id_client));
+//     }
+
+//     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+
+//     // ✅ REQUÊTE SANS LIMIT/OFFSET - d'abord on prend tout
+//     const reservationsQuery = `
+//       SELECT 
+//         r.*,
+//         p.titre as propriete_titre,
+//         p.type_propriete,
+//         p.type_transaction,
+//         p.ville as propriete_ville,
+//         p.quartier as propriete_quartier,
+//         u.fullname as client_nom,
+//         u.telephone as client_telephone,
+//         pr.email as client_email,
+//         pr.avatar as client_avatar,
+//         pa.montant as montant_paiement,
+//         pa.statut as statut_paiement,
+//         pa.methode_paiement
+//       FROM Reservation r
+//       JOIN Propriete p ON r.id_propriete = p.id_propriete
+//       JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
+//       LEFT JOIN Profile pr ON u.id_utilisateur = pr.id_utilisateur
+//       LEFT JOIN Paiement pa ON r.id_reservation = pa.id_reservation
+//       ${whereClause}
+//       ORDER BY r.date_visite DESC, r.heure_visite DESC
+//     `;
+
+//     console.log('📋 Exécution requête réservations avec params:', params);
+
+//     const [allReservations] = await connection.execute(reservationsQuery, params);
+    
+//     // ✅ Appliquer la pagination manuellement en JavaScript
+//     const total = allReservations.length;
+//     const startIndex = offset;
+//     const endIndex = Math.min(offset + limitNum, total);
+//     const reservations = allReservations.slice(startIndex, endIndex);
+
+//     // Requête pour les statistiques par statut
+//     const statsQuery = `
+//       SELECT 
+//         r.statut,
+//         COUNT(*) as nombre
+//       FROM Reservation r
+//       JOIN Propriete p ON r.id_propriete = p.id_propriete
+//       WHERE p.id_utilisateur = ?
+//       GROUP BY r.statut
+//     `;
+
+//     const [statsParStatut] = await connection.execute(statsQuery, [id_agence]);
+
+//     return {
+//       success: true,
+//       data: {
+//         reservations,
+//         total,
+//         page: pageNum,
+//         limit: limitNum,
+//         pages: Math.ceil(total / limitNum) || 1,
+//         statistiques: {
+//           par_statut: statsParStatut,
+//           total_reservations: total
+//         }
+//       }
+//     };
+
+//   } catch (error) {
+//     console.error('❌ Erreur dans getReservationsByAgency:', error);
+//     console.error('🔍 Détails erreur:', error.message);
+    
+//     // Retourner une réponse d'erreur propre
+//     return {
+//       success: false,
+//       error: error.message,
+//       data: {
+//         reservations: [],
+//         total: 0,
+//         page: 1,
+//         limit: 20,
+//         pages: 0,
+//         statistiques: {
+//           par_statut: [],
+//           total_reservations: 0
+//         }
+//       }
+//     };
+    
+//   } finally {
+//     if (connection) {
+//       connection.release();
+//     }
+//   }
+// }
+
 static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 20) {
   const connection = await pool.getConnection();
   
   try {
-    console.log('📊 Début getReservationsByAgency:', { 
+    console.log('Début getReservationsByAgency:', { 
       id_agence, 
       filters, 
       page, 
@@ -926,7 +1058,7 @@ static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-    // ✅ REQUÊTE SANS LIMIT/OFFSET - d'abord on prend tout
+    // ✅ REQUÊTE CORRIGÉE - AJOUT DU PRIX ICI
     const reservationsQuery = `
       SELECT 
         r.*,
@@ -935,6 +1067,7 @@ static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 
         p.type_transaction,
         p.ville as propriete_ville,
         p.quartier as propriete_quartier,
+        p.prix as prix_location, -- ⭐ AJOUTÉ ICI : LE PRIX DE LA PROPRIÉTÉ
         u.fullname as client_nom,
         u.telephone as client_telephone,
         pr.email as client_email,
@@ -974,6 +1107,23 @@ static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 
 
     const [statsParStatut] = await connection.execute(statsQuery, [id_agence]);
 
+    // ✅ Calculer le revenu total (optionnel mais utile)
+    const revenueQuery = `
+      SELECT 
+        COALESCE(SUM(pa.montant), 0) as revenu_total
+      FROM Paiement pa
+      WHERE pa.id_reservation IN (
+        SELECT r.id_reservation 
+        FROM Reservation r
+        JOIN Propriete p ON r.id_propriete = p.id_propriete
+        WHERE p.id_utilisateur = ?
+      )
+      AND pa.statut = 'paye'
+    `;
+
+    const [revenueResult] = await connection.execute(revenueQuery, [id_agence]);
+    const revenuTotal = revenueResult[0]?.revenu_total || 0;
+
     return {
       success: true,
       data: {
@@ -984,7 +1134,8 @@ static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 
         pages: Math.ceil(total / limitNum) || 1,
         statistiques: {
           par_statut: statsParStatut,
-          total_reservations: total
+          total_reservations: total,
+          revenu_total: revenuTotal // ✅ Ajout du revenu total
         }
       }
     };
@@ -1005,7 +1156,8 @@ static async getReservationsByAgency(id_agence, filters = {}, page = 1, limit = 
         pages: 0,
         statistiques: {
           par_statut: [],
-          total_reservations: 0
+          total_reservations: 0,
+          revenu_total: 0
         }
       }
     };

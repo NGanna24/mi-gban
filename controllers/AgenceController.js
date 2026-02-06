@@ -936,7 +936,7 @@ async getReservationsByAgency(req, res) {
         par_statut: {}
       }
     };
-
+console.log('✅ *********************Données finales envoyées au frontend:', responseData);
     res.json({
       success: true,
       data: responseData

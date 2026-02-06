@@ -125,7 +125,7 @@ static async create(req, res) {
     });
   }
 }
-
+ 
   // ✅ Récupérer les réservations d'un utilisateur
   static async getReservationsByUser(req, res) {
     try {
@@ -173,6 +173,7 @@ static async create(req, res) {
       }
 
       const reservations = await Reservation.findByOwnerId(id_proprietaire);
+      // console.log(`📋 Réservations trouvées pour propriétaire *******************  ${id_proprietaire}:`, reservations);
       
       res.status(200).json({
         success: true,
@@ -233,7 +234,7 @@ static async create(req, res) {
       }
 
       const reservations = await Reservation.findByPropertyId(id_propriete);
-      
+      console.log(`📋 Réservations trouvées pour propriété *******************  ${id_propriete}:`, reservations)  ;
       res.status(200).json({
         success: true,
         count: reservations.length,
