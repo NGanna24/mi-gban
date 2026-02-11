@@ -5,7 +5,7 @@ class AgentDemande {
    * Créer une nouvelle demande d'agent
    */
   static async create(demandeData) {
-    const connection = await pool.getConnection();
+    const connection = await pool.getConnection(); 
     
     try {
       await connection.beginTransaction();

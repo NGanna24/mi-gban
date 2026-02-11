@@ -84,7 +84,7 @@ class User {
       
       const [rows] = await pool.execute(
         'SELECT * FROM Utilisateur WHERE telephone = ?',
-        [telephone]
+        [telephone] 
       );
       
       console.log('📊 Résultat recherche:', rows.length > 0 ? 'trouvé' : 'non trouvé');

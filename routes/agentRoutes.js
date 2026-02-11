@@ -14,7 +14,7 @@ router.use(authenticateToken);
 // ROUTES DES DEMANDES D'AGENT
 // =========================================================================
 
-// Vérifier l'éligibilité
+// Vérifier l'éligibilité 
 router.get('/check-eligibility', AgentDemandeController.checkEligibility);
 
 // Soumettre une demande (avec upload de documents)

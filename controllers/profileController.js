@@ -7,7 +7,7 @@ export const profileController = {
   /**
    * Récupère le profil complet d'un utilisateur 
    */
-  async getProfile(req, res) {
+  async getProfile(req, res) { 
     try { 
       const userId = req.user.id;
       console.log('👤 Get profile complet - User ID:', userId);

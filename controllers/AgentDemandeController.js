@@ -9,7 +9,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = 'uploads/agent-documents/';
     if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+      fs.mkdirSync(uploadDir, { recursive: true }); 
     }
     cb(null, uploadDir);
   },
@@ -63,7 +63,7 @@ export const AgentDemandeController = {
   },
 
   // Vérifier l'éligibilité
-  async checkEligibility(req, res) {
+  async checkEligibility(req, res) { 
     try {
       const userId = req.user.id;
       
