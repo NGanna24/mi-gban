@@ -191,6 +191,8 @@ export const suiviController = {
 
       const suiveurs = await Agence.getSuiveurs(id_agence);
 
+      console.log('Mes suiveurs -------------------',suiveurs);
+
       res.json({
         success: true,
         data: {
@@ -286,7 +288,7 @@ export const suiviController = {
 
       const estAgence = await Agence.estAgence(id_agence);
       
-      if (!estAgence) {
+      if (!estAgence) { 
         return res.status(404).json({
           success: false,
           message: 'Agence non trouvée'

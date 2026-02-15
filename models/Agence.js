@@ -70,22 +70,41 @@ class Agence {
     return { page: pageNum, limit: limitNum, offset };
   }
 
-  /**
-   * Vérifier si un utilisateur est une agence
-   */
-  static async estAgence(id_utilisateur) {
-    try {
-      const [result] = await this.executeQuery(
-        'SELECT id_utilisateur FROM Utilisateur WHERE id_utilisateur = ? AND role IN ("agent", "admin") AND est_actif = TRUE',
-        [id_utilisateur],
-        { useCache: true, cacheKey: `agence:${id_utilisateur}`, ttl: 60000 }
-      );
+/**
+ * Vérifier si un utilisateur est une agence
+ */
+static async estAgence(id_utilisateur) {
+  try {
+    const result = await this.executeQuery(
+      'SELECT id_utilisateur FROM Utilisateur WHERE id_utilisateur = ? AND role IN ("agent", "admin") AND est_actif = TRUE',
+      [id_utilisateur],
+      { useCache: true, cacheKey: `agence:${id_utilisateur}`, ttl: 60000 }
+    );
+    
+    // ✅ CORRECTION : Vérifier correctement la structure du résultat
+    // Si result est un tableau avec des éléments
+    if (Array.isArray(result)) {
+      // Si c'est un tableau de tableaux (comme avec execute)
+      if (result.length > 0 && Array.isArray(result[0])) {
+        return result[0].length > 0;
+      }
+      // Si c'est un tableau simple
       return result.length > 0;
-    } catch (error) {
-      console.error('Erreur vérification agence:', error);
-      throw error;
     }
+    
+    // Si result est un objet avec une propriété length
+    if (result && typeof result === 'object' && 'length' in result) {
+      return result.length > 0;
+    }
+    
+    // Si result est undefined ou null
+    return false;
+    
+  } catch (error) {
+    console.error('Erreur vérification agence:', error);
+    throw error;
   }
+}
 
   // =========================================================================
   // MÉTHODES DE BASE - SUIVI
@@ -241,8 +260,9 @@ class Agence {
     try {
       const suiveurs = await this.executeQuery(`
         SELECT 
-          u.id_utilisateur,
+          u.id_utilisateur, 
           u.fullname,
+          u.telephone,
           u.role,
           p.avatar,
           p.ville,
