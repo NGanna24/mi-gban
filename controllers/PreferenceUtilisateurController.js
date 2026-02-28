@@ -8,7 +8,7 @@ class PreferenceUtilisateurController {
       const { id_utilisateur } = req.user; // Récupéré du middleware d'authentification
       const { projet, types_bien, budget_max, villes_preferees, quartiers_preferes } = req.body;
       console.log('Données reçues pour createOrUpdate:', req.body);
-
+  
       // Validation des données
       if (!projet && !types_bien && !budget_max) { 
         return res.status(400).json({

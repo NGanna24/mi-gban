@@ -529,12 +529,12 @@ static async getAll(filters = {}, page = 1, limit = 20) {
           reason: 'Profil incomplet. Veuillez compléter votre profil.',
           missingFields: ['profile']
         };
-      }
+      } 
 
       const missingFields = [];
       if (!profile[0].email) missingFields.push('email');
       if (!profile[0].telephone) missingFields.push('telephone');
-      if (!profile[0].adresse) missingFields.push('adresse');
+      // if (!profile[0].adresse) missingFields.push('adresse');
 
       if (missingFields.length > 0) {
         return {

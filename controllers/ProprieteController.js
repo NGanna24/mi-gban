@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import NodeGeocoder from 'node-geocoder';
 import { fileURLToPath } from 'url';
 import Media from '../models/Media.js';
 import Propriete from '../models/Propriete.js';
@@ -11,221 +12,491 @@ import PreferenceUtilisateur from '../models/PreferencesUtilisateur.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+
+// ✅ CONFIGURATION DU GÉOCODEUR
+const geocoderOptions = {
+  provider: 'openstreetmap',
+  httpAdapter: 'https',
+  formatter: null,
+  timeout: 5000, // Timeout de 5 secondes
+  limit: 1
+};
+
+const geocoder = NodeGeocoder(geocoderOptions);
+
+// ✅ MÉTHODE UTILITAIRE POUR OBTENIR LE QUARTIER ET LA VILLE DEPUIS LES COORDONNÉES
+async function getQuartierFromCoordinates(longitude, latitude) {
+  // Vérifier si les coordonnées sont valides
+  if (!longitude || !latitude || 
+      longitude === 0 || latitude === 0 || 
+      isNaN(longitude) || isNaN(latitude)) {
+    console.log('🗺️ Coordonnées invalides:', { longitude, latitude });
+    return { 
+      quartier: null, 
+      ville: null,
+      pays: null,
+      adresse_complete: null
+    };
+  }
+
+  try {
+    console.log(`🗺️ Recherche du quartier et ville pour: lat=${latitude}, lng=${longitude}`);
+    
+    const res = await geocoder.reverse({ lat: latitude, lon: longitude });
+    console.log('🗺️ Réponse du géocodage inversé:', JSON.stringify(res[0], null, 2));
+    
+    if (res && res.length > 0) {
+      const address = res[0];
+      console.log('📍 Adresse complète trouvée:', address);
+      
+      // ========== EXTRACTION DU QUARTIER ==========
+      let quartier = null;
+      
+      // Essayer d'extraire le quartier depuis l'adresse formatée
+      if (address.formattedAddress) {
+        const addressParts = address.formattedAddress.split(',');
+        // Le premier élément est souvent le numéro + rue, le deuxième peut être le quartier
+        // On prend le premier élément comme quartier par défaut
+        quartier = addressParts[0]?.trim() || null;
+        
+        // Si on a au moins 2 parties, la deuxième peut être le quartier/ville
+        if (addressParts.length >= 2 && !quartier) {
+          quartier = addressParts[1]?.trim();
+        }
+      }
+      
+      // Essayer d'autres propriétés spécifiques d'OpenStreetMap
+      if (!quartier && address.suburb) quartier = address.suburb;
+      if (!quartier && address.neighbourhood) quartier = address.neighbourhood;
+      if (!quartier && address.district) quartier = address.district;
+      if (!quartier && address.city_district) quartier = address.city_district;
+      if (!quartier && address.borough) quartier = address.borough;
+      if (!quartier && address.quarter) quartier = address.quarter;
+      
+      // ========== EXTRACTION DE LA VILLE ==========
+      let ville = null;
+      
+      // Essayer différentes propriétés pour la ville (par ordre de priorité)
+      ville = address.city || 
+              address.town || 
+              address.village || 
+              address.municipality ||
+              address.county ||
+              address.state_district ||
+              null;
+      
+      // Si pas de ville trouvée, essayer depuis l'adresse formatée
+      if (!ville && address.formattedAddress) {
+        const addressParts = address.formattedAddress.split(',');
+        // La ville est souvent le dernier ou avant-dernier élément
+        if (addressParts.length >= 2) {
+          // Prendre l'avant-dernier élément comme ville
+          ville = addressParts[addressParts.length - 2]?.trim();
+        }
+        if (!ville && addressParts.length >= 1) {
+          ville = addressParts[addressParts.length - 1]?.trim();
+        }
+      }
+      
+      // ========== EXTRACTION DU PAYS ==========
+      let pays = address.country || null;
+      
+      // ========== ADRESSE COMPLÈTE ==========
+      const adresse_complete = address.formattedAddress || null;
+      
+      console.log(`✅ Quartier déterminé: ${quartier || 'Non trouvé'}`);
+      console.log(`✅ Ville déterminée: ${ville || 'Non trouvée'}`);
+      console.log(`✅ Pays déterminé: ${pays || 'Non trouvé'}`);
+      
+      return {
+        quartier: quartier,
+        ville: ville,
+        pays: pays,
+        adresse_complete: adresse_complete,
+        code_postal: address.zipcode || address.postalCode || null,
+        rue: address.streetName || address.road || null
+      };
+    } else {
+      console.log('⚠️ Aucune adresse trouvée pour ces coordonnées');
+      return { 
+        quartier: null, 
+        ville: null,
+        pays: null,
+        adresse_complete: null 
+      };
+    }
+  } catch (error) {
+    console.error('❌ Erreur géocodage inversé:', error.message);
+    return { 
+      quartier: null, 
+      ville: null,
+      pays: null,
+      adresse_complete: null 
+    };
+  }
+}
+
+
 export const ProprieteController = { 
   
-  // ✅ Créer une propriété avec la structure simplifiée + NOTIFICATIONS
-  async creerPropriete(req, res) {
-    try {
-      // Données de base de la propriété 
-      const {
-        id_utilisateur,
-        telephone,
-        titre,
-        type_propriete,
-        description,
-        // ✅ SEUL CHAMP PRIX
-        prix,
-        // ✅ NOUVEAUX CHAMPS SIMPLIFIÉS
-        type_transaction = 'location',
-        periode_facturation = 'mois',
-        charges_comprises = false,
-        duree_min_sejour = 1,
-        // AUTRES CHAMPS
-        longitude,
-        latitude,
-        quartier,
-        ville,
-        pays,
-        statut = 'disponible'
-      } = req.body;
+// ✅ CRÉER UNE PROPRIÉTÉ AVEC GÉOCODAGE AUTOMATIQUE DU QUARTIER ET DE LA VILLE
+async creerPropriete(req, res) {
+  try {
+    // Données de base de la propriété 
+    const {
+      id_utilisateur,
+      telephone,
+      titre,
+      type_propriete,
+      description,
+      prix,
+      type_transaction = 'location',
+      periode_facturation = 'mois',
+      charges_comprises = false,
+      duree_min_sejour = 1,
+      longitude,
+      latitude,
+      quartier, // ← IGNORÉ, SERA REMPLACÉ PAR LA VALEUR BACKEND
+      ville,    // ← IGNORÉ, SERA REMPLACÉ PAR LA VALEUR BACKEND
+      pays,
+      statut = 'disponible'
+    } = req.body;
 
-      // ✅ Validation des champs obligatoires
-      if (!id_utilisateur || !titre || !type_propriete || !prix) {
-        return res.status(400).json({
-          success: false,
-          message: 'Champs obligatoires manquants: id_utilisateur, titre, type_propriete, prix'
-        });
-      }
-
-      // ✅ VALIDATION DU PRIX
-      if (isNaN(prix) || parseFloat(prix) <= 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Le prix doit être un nombre valide supérieur à 0'
-        });
-      }
-
-      // ✅ VÉRIFICATION STRICTE: L'utilisateur doit exister
-      const userExists = await User.exists(id_utilisateur);
-      if (!userExists) {
-        return res.status(404).json({
-          success: false,
-          message: 'Utilisateur non trouvé. Inscription requise.'
-        });
-      }
-
-      // ✅ CORRIGÉ: Préparer les caractéristiques depuis le body
-      const caracteristiques = {};
-
-      // Liste des champs réservés (ne pas inclure dans les caractéristiques)
-      const reservedFields = [
-        'id_utilisateur', 'telephone', 'titre', 'type_propriete', 'description', 
-        'prix', 'longitude', 'latitude', 'quartier', 'ville', 'pays', 
-        'statut', 'media_metadata', 'files',
-        // ✅ NOUVEAUX CHAMPS SIMPLIFIÉS
-        'type_transaction', 'periode_facturation', 'charges_comprises', 'duree_min_sejour'
-      ];
-
-      // Extraire les caractéristiques du body avec validation de type
-      Object.keys(req.body).forEach(key => {
-        if (!reservedFields.includes(key)) {
-          const value = req.body[key];
-          
-          // ✅ VÉRIFIER le type avant de convertir
-          if (typeof value === 'string') {
-            if (value === 'true' || value === '1') {
-              caracteristiques[key] = true;
-            } else if (value === 'false' || value === '0') {
-              caracteristiques[key] = false;
-            } else if (!isNaN(value) && value !== '') {
-              caracteristiques[key] = Number(value);
-            } else {
-              caracteristiques[key] = value;
-            }
-          } else {
-            // Si ce n'est pas un string (objet, number, etc.), garder la valeur originale
-            caracteristiques[key] = value;
-          }
-        }
-      });
-
-      console.log('Données reçues:', {
-        id_utilisateur, titre, type_propriete, type_transaction, prix,
-        caracteristiques,
-        fichiers: req.files ? req.files.length : 0
-      });
-
-      // ✅ Créer la propriété avec le nouveau modèle simplifié
-      const proprieteData = {
-        id_utilisateur,
-        titre,
-        type_propriete,
-        description,
-        // ✅ SEUL CHAMP PRIX
-        prix,
-        longitude: longitude || 0,
-        latitude: latitude || 0,
-        quartier : quartier || 'quartier',
-        ville:ville|| 'ville',
-        pays: pays || 'CI',
-        statut,
-        // ✅ NOUVEAUX CHAMPS SIMPLIFIÉS
-        type_transaction,
-        periode_facturation,
-        charges_comprises,
-        duree_min_sejour,
-        caracteristiques
-      }; 
-
-      const nouvellePropriete = await Propriete.create(proprieteData);
-
-      // ✅ Gestion des médias avec le nouveau système - CORRIGÉ
-      if (req.files && req.files.length > 0) {
-        console.log(`Tentative d'insertion de ${req.files.length} médias`);
-        
-        // ✅ CORRECTION: Créer une instance de Propriete pour utiliser addMedia
-        const proprieteInstance = new Propriete();
-        proprieteInstance.id_propriete = nouvellePropriete.id_propriete;
-        
-        for (let i = 0; i < req.files.length; i++) {
-          const file = req.files[i];
-          const isImage = file.mimetype.startsWith('image/');
-          const typeMedia = isImage ? 'image' : 'video';
-          
-          // Récupérer les métadonnées du média
-          let mediaMetadata = {};
-          try {
-            if (req.body.media_metadata && req.body.media_metadata[i]) {
-              mediaMetadata = typeof req.body.media_metadata[i] === 'string' 
-                ? JSON.parse(req.body.media_metadata[i])
-                : req.body.media_metadata[i];
-            }
-          } catch (error) {
-            console.warn('❌ Erreur parsing metadata:', error);
-          }
-          
-          // Déterminer si c'est le média principal
-          const estPrincipale = mediaMetadata.est_principale === '1' || 
-                               mediaMetadata.est_principale === true ||
-                               (isImage && i === 0); // Premier image par défaut
-          
-          // Ordre d'affichage
-          const ordreAffichage = mediaMetadata.ordre_affichage || (i + 1);
-          
-          console.log(`📸 Ajout média ${i + 1}:`, {
-            fichier: file.filename,
-            type: typeMedia,
-            estPrincipale,
-            ordreAffichage
-          });
-          
-          await proprieteInstance.addMedia(
-            file.filename,
-            typeMedia,
-            estPrincipale,
-            parseInt(ordreAffichage)
-          );
-        }
-        console.log(`${req.files.length} médias insérés avec succès`);
-      }
-
-      // ✅ Récupérer la propriété complète avec ses médias et caractéristiques
-      const proprieteComplete = await Propriete.findById(nouvellePropriete.id_propriete);
-
-      // ✅ NOTIFIER TOUS LES UTILISATEURS EN ARRIÈRE-PLAN (NOUVEAU)
-      console.log('🚀 Lancement des notifications...');
-      NotificationService.notifyAllUsersAboutNewProperty(proprieteComplete)
-        .then(result => {
-          console.log(`✅ Notifications envoyées avec succès à tous les utilisateurs`);
-          console.log(`📊 Détail: ${result?.length || 0} tickets de notification`); 
-        })
-        .catch(error => {
-          console.error('❌ Erreur lors de l\'envoi des notifications:', error);
-          // Ne pas bloquer le processus même en cas d'erreur
-        });
-
-      // ✅ RÉPONSE IMMÉDIATE AU CLIENT
-      res.status(201).json({
-        success: true,
-        message: 'Propriété créée avec succès',
-        data: proprieteComplete
-      });
-
-    } catch (error) {
-      console.error('Erreur création propriété:', error);
-      
-      // ✅ Supprimer les fichiers uploadés en cas d'erreur
-      if (req.files && req.files.length > 0) {
-        req.files.forEach(file => {
-          const filePath = path.join('uploads/properties/', file.filename);
-          if (fs.existsSync(filePath)) {
-            try {
-              fs.unlinkSync(filePath);
-              console.log(`Fichier supprimé: ${file.filename}`);
-            } catch (unlinkError) {
-              console.error('Erreur suppression fichier:', unlinkError);
-            }
-          }
-        });
-      }
-      
-      res.status(500).json({
+    // ✅ Validation des champs obligatoires
+    if (!id_utilisateur || !titre || !type_propriete || !prix) {
+      return res.status(400).json({
         success: false,
-        message: 'Erreur lors de la création de la propriété',
-        error: error.message
+        message: 'Champs obligatoires manquants: id_utilisateur, titre, type_propriete, prix'
       });
     }
-  },
+
+    // ✅ VALIDATION DU PRIX
+    if (isNaN(prix) || parseFloat(prix) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le prix doit être un nombre valide supérieur à 0'
+      });
+    }
+
+    // ✅ VÉRIFICATION STRICTE: L'utilisateur doit exister
+    const userExists = await User.exists(id_utilisateur);
+    if (!userExists) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé. Inscription requise.'
+      });
+    }
+
+    // ✅ ÉTAPE CRITIQUE : DÉTERMINER LE QUARTIER ET LA VILLE AUTOMATIQUEMENT
+    let quartierFinal = null;
+    let villeFinale = ville || null; // Valeur par défaut depuis le frontend
+    let paysFinal = pays || 'CI';    // Valeur par défaut depuis le frontend
+    let adresseComplete = null;
+
+    // Si des coordonnées valides sont fournies, on tente le géocodage inversé
+    if (longitude && latitude && longitude !== 0 && latitude !== 0) {
+      console.log('🗺️ Tentative de détermination automatique du quartier et ville...');
+      
+      try {
+        const locationData = await getQuartierFromCoordinates(longitude, latitude);
+        
+        // ✅ QUARTIER - Priorité à la valeur du géocodeur
+        if (locationData.quartier) {
+          quartierFinal = locationData.quartier;
+          console.log(`✅ Quartier automatique utilisé: ${quartierFinal} (remplace la valeur frontend: ${quartier || 'non fournie'})`);
+        } else {
+          console.log(`⚠️ Géocodage n'a pas trouvé de quartier, conservation valeur frontend: ${quartier || 'non fournie'}`);
+          quartierFinal = quartier || 'Non spécifié';
+        }
+        
+        // ✅ VILLE - Priorité à la valeur du géocodeur
+        if (locationData.ville) {
+          villeFinale = locationData.ville;
+          console.log(`✅ Ville automatique utilisée: ${villeFinale} (remplace la valeur frontend: ${ville || 'non fournie'})`);
+        } else {
+          console.log(`⚠️ Géocodage n'a pas trouvé de ville, conservation valeur frontend: ${ville || 'non fournie'}`);
+          villeFinale = ville || 'Non spécifié';
+        }
+        
+        // ✅ PAYS - Priorité à la valeur du géocodeur
+        if (locationData.pays) {
+          paysFinal = locationData.pays;
+          console.log(`✅ Pays automatique utilisé: ${paysFinal} (remplace la valeur frontend: ${pays || 'non fournie'})`);
+        }
+        
+        // ✅ Adresse complète (optionnel)
+        adresseComplete = locationData.adresse_complete;
+        
+      } catch (geoError) {
+        console.error('❌ Erreur lors du géocodage inversé:', geoError);
+        // En cas d'erreur, on garde les valeurs du frontend
+        quartierFinal = quartier || 'Non spécifié';
+        villeFinale = ville || 'Non spécifié';
+        paysFinal = pays || 'CI';
+      }
+    } else {
+      // Pas de coordonnées valides, on garde les valeurs du frontend
+      console.log('⚠️ Coordonnées non fournies ou invalides, utilisation des valeurs frontend');
+      quartierFinal = quartier || 'Non spécifié';
+      villeFinale = ville || 'Non spécifié';
+      paysFinal = pays || 'CI';
+    }
+
+    // ✅ Préparer les caractéristiques depuis le body
+    const caracteristiques = {};
+
+    // Liste des champs réservés (ne pas inclure dans les caractéristiques)
+    const reservedFields = [
+      'id_utilisateur', 'telephone', 'titre', 'type_propriete', 'description', 
+      'prix', 'longitude', 'latitude', 'quartier', 'ville', 'pays', 
+      'statut', 'media_metadata', 'files',
+      'type_transaction', 'periode_facturation', 'charges_comprises', 'duree_min_sejour'
+    ];
+
+    // Extraire les caractéristiques du body avec validation de type
+    Object.keys(req.body).forEach(key => {
+      if (!reservedFields.includes(key)) {
+        const value = req.body[key];
+        
+        if (typeof value === 'string') {
+          if (value === 'true' || value === '1') {
+            caracteristiques[key] = true;
+          } else if (value === 'false' || value === '0') {
+            caracteristiques[key] = false;
+          } else if (!isNaN(value) && value !== '') {
+            caracteristiques[key] = Number(value);
+          } else {
+            caracteristiques[key] = value;
+          }
+        } else {
+          caracteristiques[key] = value;
+        }
+      }
+    });
+
+    console.log('📦 Données reçues:', {
+      id_utilisateur, 
+      titre, 
+      type_propriete, 
+      type_transaction, 
+      prix,
+      coordonnees: { longitude, latitude },
+      quartier_final: quartierFinal, // ← Quartier déterminé par le backend
+      ville_finale: villeFinale,     // ← Ville déterminée par le backend
+      pays_final: paysFinal,         // ← Pays déterminé par le backend
+      caracteristiques: Object.keys(caracteristiques).length,
+      fichiers: req.files ? req.files.length : 0
+    });
+
+    // ✅ Créer la propriété avec le quartier ET la ville déterminés automatiquement
+    const proprieteData = { 
+      id_utilisateur,
+      titre,
+      type_propriete,
+      description,
+      prix,
+      longitude: longitude || 0,
+      latitude: latitude || 0,
+      quartier: quartierFinal, // ← TOUJOURS LA VALEUR BACKEND (géocodage ou frontend)
+      ville: villeFinale,      // ← MAINTENANT UTILISE LA VILLE DU GÉOCODEUR
+      pays: paysFinal,         // ← PAYS DU GÉOCODEUR
+      statut,
+      type_transaction, 
+      periode_facturation,
+      charges_comprises,
+      duree_min_sejour,
+      caracteristiques
+    }; 
+
+    const nouvellePropriete = await Propriete.create(proprieteData);
+
+    // ✅ Gestion des médias
+    if (req.files && req.files.length > 0) {
+      console.log(`📸 Tentative d'insertion de ${req.files.length} médias`);
+      
+      const proprieteInstance = new Propriete();
+      proprieteInstance.id_propriete = nouvellePropriete.id_propriete;
+      
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        const isImage = file.mimetype.startsWith('image/');
+        const typeMedia = isImage ? 'image' : 'video';
+        
+        let mediaMetadata = {};
+        try {
+          if (req.body.media_metadata && req.body.media_metadata[i]) {
+            mediaMetadata = typeof req.body.media_metadata[i] === 'string' 
+              ? JSON.parse(req.body.media_metadata[i])
+              : req.body.media_metadata[i];
+          }
+        } catch (error) {
+          console.warn('❌ Erreur parsing metadata:', error);
+        }
+        
+        const estPrincipale = mediaMetadata.est_principale === '1' || 
+                             mediaMetadata.est_principale === true ||
+                             (isImage && i === 0);
+        
+        const ordreAffichage = mediaMetadata.ordre_affichage || (i + 1);
+        
+        console.log(`📸 Ajout média ${i + 1}:`, {
+          fichier: file.filename,
+          type: typeMedia,
+          estPrincipale,
+          ordreAffichage
+        });
+        
+        await proprieteInstance.addMedia(
+          file.filename,
+          typeMedia,
+          estPrincipale,
+          parseInt(ordreAffichage)
+        );
+      }
+      console.log(`✅ ${req.files.length} médias insérés avec succès`);
+    }
+
+    // ✅ Récupérer la propriété complète
+    const proprieteComplete = await Propriete.findById(nouvellePropriete.id_propriete);
+
+    // ✅ Notifications en arrière-plan
+    console.log('🚀 Lancement des notifications...');
+    NotificationService.notifyAllUsersAboutNewProperty(proprieteComplete)
+      .then(result => {
+        console.log(`✅ Notifications envoyées avec succès à tous les utilisateurs`);
+        console.log(`📊 Détail: ${result?.length || 0} tickets de notification`); 
+      })
+      .catch(error => {
+        console.error('❌ Erreur lors de l\'envoi des notifications:', error);
+      });
+
+    // ✅ RÉPONSE AVEC INFORMATION SUR LE QUARTIER ET LA VILLE
+    res.status(201).json({
+      success: true,
+      message: 'Propriété créée avec succès',
+      data: proprieteComplete,
+      metadata: {
+        geocodage: {
+          utilise: !!(longitude && latitude && longitude !== 0 && latitude !== 0),
+          succes: !!(quartierFinal && quartierFinal !== 'Non spécifié' && quartierFinal !== quartier) ||
+                  !!(villeFinale && villeFinale !== 'Non spécifié' && villeFinale !== ville),
+        },
+        sources: {
+          quartier: quartierFinal !== quartier ? 'automatique' : (quartier ? 'frontend' : 'defaut'),
+          ville: villeFinale !== ville ? 'automatique' : (ville ? 'frontend' : 'defaut'),
+          pays: paysFinal !== pays ? 'automatique' : (pays ? 'frontend' : 'defaut')
+        },
+        valeurs: {
+          quartier_determine: quartierFinal,
+          ville_determinee: villeFinale,
+          pays_determine: paysFinal
+        },
+        ignore_depuis_frontend: {
+          quartier: quartier || 'non fourni',
+          ville: ville || 'non fournie',
+          pays: pays || 'non fourni'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur création propriété:', error);
+    
+    // ✅ Supprimer les fichiers uploadés en cas d'erreur
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        const filePath = path.join('uploads/properties/', file.filename);
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+            console.log(`🗑️ Fichier supprimé: ${file.filename}`);
+          } catch (unlinkError) {
+            console.error('❌ Erreur suppression fichier:', unlinkError);
+          }
+        }
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la création de la propriété',
+      error: error.message
+    });
+  }
+},
+
+  // ✅ EXPOSER LA MÉTHODE DE GÉOCODAGE (utile pour d'autres endpoints)
+  // async getQuartierFromCoordinatesAPI(req, res) {
+  //   try {
+  //     const { longitude, latitude } = req.query;
+      
+  //     if (!longitude || !latitude) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: 'Longitude et latitude requises'
+  //       });
+  //     }
+
+  //     const quartier = await getQuartierFromCoordinates(
+  //       parseFloat(longitude), 
+  //       parseFloat(latitude)
+  //     );
+
+  //     res.json({
+  //       success: true,
+  //       data: {
+  //         quartier: quartier || 'Non trouvé',
+  //         coordonnees: { longitude, latitude }
+  //       }
+  //     });
+
+  //   } catch (error) {
+  //     console.error('❌ Erreur API géocodage:', error);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: 'Erreur lors de la récupération du quartier'
+  //     });
+  //   }
+  // },
+
+  // Dans ProprieteController.js - ajoutez cette méthode si elle n'existe pas
+
+// ✅ EXPOSER LA MÉTHODE DE GÉOCODAGE (utile pour le frontend)
+async getQuartierFromCoordinatesAPI(req, res) {
+  try {
+    const { longitude, latitude } = req.query;
+    
+    if (!longitude || !latitude) {
+      return res.status(400).json({
+        success: false,
+        message: 'Longitude et latitude requises'
+      });
+    }
+
+    const locationData = await getQuartierFromCoordinates(
+      parseFloat(longitude), 
+      parseFloat(latitude)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        quartier: locationData.quartier || null,
+        ville: locationData.ville || null,
+        pays: locationData.pays || null,
+        adresse_complete: locationData.adresse_complete,
+        coordonnees: { longitude, latitude }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur API géocodage:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération du quartier'
+    });
+  }
+},
 
   // 👁️ Enregistrer une vue sur une propriété
   async enregistrerVue(req, res) {
@@ -2047,7 +2318,7 @@ async modifierPropriete(req, res) {
           try {
             if (!propriete) return null;
 
-            console.log("Debug propriété ùùùùùùùùùùùùùùùùùùùùùùùùùùùù:", propriete);
+            // console.log("Debug propriété ùùùùùùùùùùùùùùùùùùùùùùùùùùùù:", propriete);
 
             // Formater les médias avec URLs complètes
             const mediasAvecUrls = propriete.medias ? propriete.medias.map(media => ({

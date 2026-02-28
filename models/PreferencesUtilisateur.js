@@ -5,7 +5,7 @@ class PreferenceUtilisateur {
   // Créer ou mettre à jour les préférences utilisateur
   static async createOrUpdate(preferenceData) {
     const connection = await pool.getConnection();
-    
+     
     try {
       await connection.beginTransaction();
 
@@ -229,7 +229,7 @@ class PreferenceUtilisateur {
       // Considérer l'onboarding comme complet si au moins le projet est défini
       return prefs.projet !== null;
     } catch (error) {
-      console.error('❌ Erreur modèle hasCompletedOnboarding:', error);
+      console.error('Erreur modèle hasCompletedOnboarding:', error);
       return false;
     }
   }

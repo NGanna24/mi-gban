@@ -358,6 +358,7 @@ app.delete('/api/cleanup-orphaned-files', async (req, res) => {
 
 // Routes pour la gestion des propriétés (AVEC FONCTIONNALITÉS SOCIALES)
 app.use('/api/proprietes', ProprieteRouter);
+app.use('/api/geocode', ProprieteRouter); // Route pour le géocodage inverse (quartier à partir de coordonnées)
 app.use('/api/agence', agenceRoutes); 
 app.use('/api/agent', agentRoutes);
 app.use('/api/publicites', publiciteRouter);

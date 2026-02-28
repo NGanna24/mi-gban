@@ -344,7 +344,7 @@ export const authController = {
       }
 
       console.log('✅ Token valide pour ID:', req.user.id);
-
+ 
       res.json({
         success: true,
         valid: true,

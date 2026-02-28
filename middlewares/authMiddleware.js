@@ -23,7 +23,7 @@ export const authenticateToken = (req, res, next) => {
       return next(); // Continuer sans erreur
     }
 
-    console.log('✅ Token décodé avec succès:', decoded);
+    // console.log('✅ Token décodé avec succès:', decoded);
     
     // ✅ CORRECTION : Mapper "id" vers "id_utilisateur" pour votre base de données
     req.user = {

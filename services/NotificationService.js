@@ -453,7 +453,7 @@ const calculateSimilarity = (str1, str2) => {
 
 // Modifiez propertyMatchesCriteria pour utiliser les champs individuels :
 const propertyMatchesCriteria = (property, alert) => {
-  console.log('La propriété à vérifier *****************************************:', {property, alert});
+  // console.log('La propriété à vérifier *****************************************:', {property, alert});
   try {
     
     console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, alert);
@@ -1045,7 +1045,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
       total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    console.log('🎉 NOTIFICATION COMPLÈTE TERMINÉE:', result);
+    // console.log('🎉 NOTIFICATION COMPLÈTE TERMINÉE:', result);
     return result;
 
   } catch (error) {

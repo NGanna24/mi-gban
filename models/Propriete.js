@@ -52,7 +52,7 @@ class Propriete {
     try {
       await connection.beginTransaction();
 
-      console.log('🏠 Création propriété avec données:', proprieteData);
+      // console.log('🏠 Création propriété avec données:', proprieteData);
 
       const {
         id_utilisateur,
@@ -111,7 +111,7 @@ class Propriete {
       );
 
       const id_propriete = result.insertId;
-      console.log('✅ Propriété créée avec ID:', id_propriete, 'Caution automatique:', cautionFinale);
+      // console.log('✅ Propriété créée avec ID:', id_propriete, 'Caution automatique:', cautionFinale);
 
       // Insérer les caractéristiques
       if (Object.keys(caracteristiques).length > 0) {
@@ -174,10 +174,10 @@ class Propriete {
   // 🔧 Méthode privée pour insérer les caractéristiques
   static async #insertCaracteristiques(connection, id_propriete, caracteristiques) {
     try {
-      console.log('📝 Insertion caractéristiques pour propriété:', id_propriete, caracteristiques);
+      // console.log('📝 Insertion caractéristiques pour propriété:', id_propriete, caracteristiques);
       
       if (!caracteristiques || Object.keys(caracteristiques).length === 0) {
-        console.log('ℹ️ Aucune caractéristique à insérer');
+        // console.log('ℹ️ Aucune caractéristique à insérer');
         return;
       }
 
@@ -189,7 +189,7 @@ class Propriete {
 
       // Récupérer les IDs des caractéristiques par leur nom
       const caracteristiqueEntries = Object.entries(caracteristiques);
-      console.log('🔍 Recherche IDs caractéristiques:', caracteristiqueEntries.map(([nom]) => nom));
+      // console.log('🔍 Recherche IDs caractéristiques:', caracteristiqueEntries.map(([nom]) => nom));
 
       for (const [nom, valeur] of caracteristiqueEntries) { 
         try {
@@ -200,7 +200,7 @@ class Propriete {
           );
 
           if (caracteristiqueRows.length === 0) {
-            console.warn(`⚠️ Caractéristique non trouvée: ${nom}`);
+            // console.warn(`⚠️ Caractéristique non trouvée: ${nom}`);
             continue;
           }
 

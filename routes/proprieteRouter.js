@@ -16,7 +16,7 @@ const storage = multer.diskStorage({
     const originalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
     cb(null, uniqueSuffix + '-' + originalName);
   }
-});
+}); 
 
 const upload = multer({
   storage: storage,
@@ -72,5 +72,10 @@ router.patch('/:id_propriete/statut', ProprieteController.updateStatutPropriete)
 
 router.delete('/:id_propriete', ProprieteController.supprimerPropriete);
 router.delete('/media/:id_media', ProprieteController.supprimerMedia);
+
+
+
+// Dans votre fichier de routes
+router.get('/proprietes/geocode', ProprieteController.getQuartierFromCoordinatesAPI);
 
 export default router;

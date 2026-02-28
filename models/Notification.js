@@ -52,7 +52,7 @@ class Notification {
       );
 
       await connection.commit(); 
-      console.log('✅ Notification créée avec ID:', result.insertId);
+      // console.log('✅ Notification créée avec ID:', result.insertId);
 
       return result.insertId;
 
