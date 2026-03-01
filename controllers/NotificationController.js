@@ -19,23 +19,23 @@ export const NotificationController = {
         });
       }
 
-      console.log('📋 API getNotifications - User:', userId, 'Page:', page, 'Limit:', limit);
+      // console.log('📋 API getNotifications - User:', userId, 'Page:', page, 'Limit:', limit);
 
       // Test direct SQL avant d'utiliser le modèle
-      console.log('🧪 Test SQL direct avant appel modèle...');
+      // console.log('🧪 Test SQL direct avant appel modèle...');
       const [testCount] = await pool.execute(
         'SELECT COUNT(*) as total FROM Notification WHERE id_utilisateur = ?',
         [userId]
       );
-      console.log('🧪 Test SQL - Total notifications:', testCount[0].total);
+      // console.log('🧪 Test SQL - Total notifications:', testCount[0].total);
 
       const result = await Notification.findByUser(userId, page, limit);
 
-      console.log('✅ Réponse Notification.findByUser:', {
-        notificationsCount: result.notifications?.length || 0,
-        totalInModel: result.total || 0,
-        totalInSQL: testCount[0].total
-      });
+      // console.log('✅ Réponse Notification.findByUser:', {
+      //   notificationsCount: result.notifications?.length || 0,
+      //   totalInModel: result.total || 0,
+      //   totalInSQL: testCount[0].total
+      // });
 
       res.json({
         success: true,
@@ -190,7 +190,7 @@ export const NotificationController = {
         });
       }
 
-      console.log('🔢 Compter notifications non lues:', userId);
+      // console.log('🔢 Compter notifications non lues:', userId);
 
       const count = await Notification.countUnread(userId);
 

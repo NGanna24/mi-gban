@@ -135,7 +135,7 @@ class User {
   }
 static async findProprietaieProfile(id_utilisateur) {
   try {
-    console.log(`🔍 Recherche utilisateur par id de propriete: ${id_utilisateur}`);
+    // console.log(`🔍 Recherche utilisateur par id de propriete: ${id_utilisateur}`);
     
     // ✅ CORRECTION : Requête qui JOINT DIRECTEMENT les informations du profil
     const [rows] = await pool.query(
@@ -182,7 +182,7 @@ static async findProprietaieProfile(id_utilisateur) {
       pays: user.pays
     };
     
-    console.log(`✅ Profil attaché à l'utilisateur - Avatar: ${result.avatar || 'null'}`);
+    // console.log(`✅ Profil attaché à l'utilisateur - Avatar: ${result.avatar || 'null'}`);
     return result;
     
   } catch (error) {

@@ -123,44 +123,73 @@ class PreferenceUtilisateur {
     }
   }
 
-  // ✅ RÉCUPÉRER LES PRÉFÉRENCES PAR ID UTILISATEUR - VERSION OPTIMISÉE
-  static async getByUserId(id_utilisateur) {
-    try { 
-      // Récupérer les préférences de base
-      const [prefsRows] = await pool.execute(
-        `SELECT 
-          id_preference, id_utilisateur, projet, budget_max,
-          date_creation, date_mise_a_jour
-         FROM PreferencesUtilisateur 
-         WHERE id_utilisateur = ?`,
-        [id_utilisateur]
-      );
+// ✅ RÉCUPÉRER TOUTES LES PRÉFÉRENCES PAR ID UTILISATEUR - VERSION OPTIMISÉE
+static async getByUserId(id_utilisateur) {
+    try {
+        // Requête unique avec tous les LEFT JOIN nécessaires
+        const [rows] = await pool.execute(
+            `SELECT 
+                pu.id_preference,
+                pu.projet,
+                pu.budget_max,
+                pu.date_creation,
+                pu.date_mise_a_jour,
+                -- Agrégation des villes
+                GROUP_CONCAT(DISTINCT pv.ville ORDER BY pv.ville SEPARATOR '||') as villes_preferees,
+                -- Agrégation des types de biens
+                GROUP_CONCAT(DISTINCT ptb.type_bien ORDER BY ptb.type_bien SEPARATOR '||') as types_bien,
+                -- Agrégation des quartiers
+                GROUP_CONCAT(DISTINCT pq.quartier ORDER BY pq.quartier SEPARATOR '||') as quartiers_preferes
+            FROM PreferencesUtilisateur pu
+            LEFT JOIN PreferenceVille pv ON pu.id_preference = pv.id_preference
+            LEFT JOIN PreferenceTypeBien ptb ON pu.id_preference = ptb.id_preference
+            LEFT JOIN PreferenceQuartier pq ON pu.id_preference = pq.id_preference
+            WHERE pu.id_utilisateur = ?
+            GROUP BY pu.id_preference, pu.projet, pu.budget_max, pu.date_creation, pu.date_mise_a_jour`,
+            [id_utilisateur]
+        );
 
-      if (prefsRows.length === 0) {
-        return null;
-      }
+        if (rows.length === 0) {
+            return null;
+        }
 
-      const preferences = prefsRows[0];
+        const preference = rows[0];
 
-      // ✅ RÉCUPÉRATION PARALLÈLE DES DONNÉES ASSOCIÉES
-      const [villesRows, typesRows, quartiersRows] = await Promise.all([
-        pool.execute('SELECT ville FROM PreferenceVille WHERE id_preference = ? ORDER BY ville', [preferences.id_preference]),
-        pool.execute('SELECT type_bien FROM PreferenceTypeBien WHERE id_preference = ? ORDER BY type_bien', [preferences.id_preference]),
-        pool.execute('SELECT quartier FROM PreferenceQuartier WHERE id_preference = ? ORDER BY quartier', [preferences.id_preference])
-      ]);
-
-      return {
-        ...preferences,
-        villes_preferees: villesRows[0].map(row => row.ville),
-        types_bien: typesRows[0].map(row => row.type_bien),
-        quartiers_preferes: quartiersRows[0].map(row => row.quartier)
-      };
+        // Transformation des chaînes agrégées en tableaux
+        return {
+            id_preference: preference.id_preference,
+            projet: preference.projet,
+            budget_max: preference.budget_max,
+            date_creation: preference.date_creation,
+            date_mise_a_jour: preference.date_mise_a_jour,
+            
+            // Conversion des chaînes '||' en tableaux
+            villes_preferees: preference.villes_preferees 
+                ? preference.villes_preferees.split('||').filter(v => v && v.trim() !== '')
+                : [],
+                
+            types_bien: preference.types_bien 
+                ? preference.types_bien.split('||').filter(t => t && t.trim() !== '')
+                : [],
+                
+            quartiers_preferes: preference.quartiers_preferes 
+                ? preference.quartiers_preferes.split('||').filter(q => q && q.trim() !== '')
+                : [],
+            
+            // Statistiques sur les préférences
+            stats: {
+                total_villes: (preference.villes_preferees?.split('||') || []).filter(v => v && v.trim() !== '').length,
+                total_types_bien: (preference.types_bien?.split('||') || []).filter(t => t && t.trim() !== '').length,
+                total_quartiers: (preference.quartiers_preferes?.split('||') || []).filter(q => q && q.trim() !== '').length,
+                date_derniere_maj: preference.date_mise_a_jour || preference.date_creation
+            }
+        };
 
     } catch (error) {
-      console.error('❌ Erreur modèle getByUserId:', error);
-      throw new Error(`Erreur lors de la récupération des préférences: ${error.message}`);
+        console.error('❌ Erreur modèle getByUserId:', error);
+        throw new Error(`Erreur lors de la récupération des préférences: ${error.message}`);
     }
-  }
+}
 
   // METTRE À JOUR LES PRÉFÉRENCES
   static async update(id_utilisateur, updateData) {

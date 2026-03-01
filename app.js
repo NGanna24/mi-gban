@@ -151,10 +151,10 @@ const publicitesDir = path.join(uploadsDir, 'publicites');
 // Initialisation des dossiers d'upload via le middleware dédié
 createUploadDirs();
 
-console.log('📁 [Uploads] Structure des dossiers initialisée:');
-console.log('   ├──', uploadsDir);
-console.log('   ├──', propertiesDir);
-console.log('   └──', avatarsDir);
+// console.log('📁 [Uploads] Structure des dossiers initialisée:');
+// console.log('   ├──', uploadsDir);
+// console.log('   ├──', propertiesDir);
+// console.log('   └──', avatarsDir);
 
 // Service des fichiers statiques (images et vidéos)
 app.use('/uploads/properties', express.static(propertiesDir, {
@@ -340,7 +340,7 @@ app.delete('/api/cleanup-orphaned-files', async (req, res) => {
         const cleanedCount = await cleanOrphanedFiles(24); // Nettoyer les fichiers > 24h
         res.json({
             success: true,
-            message: `Nettoyage terminé: ${cleanedCount} fichiers orphelins supprimés`,
+            // message: `Nettoyage terminé: ${cleanedCount} fichiers orphelins supprimés`,
             cleanedCount
         });
     } catch (error) {
@@ -358,7 +358,6 @@ app.delete('/api/cleanup-orphaned-files', async (req, res) => {
 
 // Routes pour la gestion des propriétés (AVEC FONCTIONNALITÉS SOCIALES)
 app.use('/api/proprietes', ProprieteRouter);
-app.use('/api/geocode', ProprieteRouter); // Route pour le géocodage inverse (quartier à partir de coordonnées)
 app.use('/api/agence', agenceRoutes); 
 app.use('/api/agent', agentRoutes);
 app.use('/api/publicites', publiciteRouter);
@@ -485,84 +484,84 @@ const startServer = async () => {
     try {
         // Initialisation de la base de données
         await initDataBase();
-        console.log('✅ [Database] Base de données initialisée avec succès');
+        // console.log('✅ [Database] Base de données initialisée avec succès');
 
         // Nettoyage initial des fichiers orphelins au démarrage
         if (process.env.CLEANUP_ON_STARTUP === 'true') {
-            console.log('🧹 [Cleanup] Nettoyage des fichiers orphelins...');
+            // console.log('🧹 [Cleanup] Nettoyage des fichiers orphelins...');
             const cleanedCount = await cleanOrphanedFiles(24);
-            console.log(`✅ [Cleanup] ${cleanedCount} fichiers orphelins supprimés`);
+            // console.log(`✅ [Cleanup] ${cleanedCount} fichiers orphelins supprimés`);
         }
 
         const PORT = process.env.PORT || 8181;
         const server = app.listen(PORT, '0.0.0.0', () => {
-            console.log('🚀 [Server] Serveur démarré sur le port', PORT);
-            console.log('🌍 [Environment]', process.env.NODE_ENV || 'development');
-            console.log('📁 [Static Files] Fichiers statiques servis depuis:', propertiesDir);
-            console.log('👤 [Avatars] Avatars servis depuis:', avatarsDir);
-            console.log('❤️  [Health Check]', `http://localhost:${PORT}/health`);
-            console.log('🔧 [Upload Test]', `http://localhost:${PORT}/api/test-uploads`);
-            console.log('🔗 [CORS] Origin autorisé:', process.env.CORS_ORIGIN || '*');
+            // console.log('🚀 [Server] Serveur démarré sur le port', PORT);
+            // console.log('🌍 [Environment]', process.env.NODE_ENV || 'development');
+            // console.log('📁 [Static Files] Fichiers statiques servis depuis:', propertiesDir);
+            // console.log('👤 [Avatars] Avatars servis depuis:', avatarsDir);
+            // console.log('❤️  [Health Check]', `http://localhost:${PORT}/health`);
+            // console.log('🔧 [Upload Test]', `http://localhost:${PORT}/api/test-uploads`);
+            // console.log('🔗 [CORS] Origin autorisé:', process.env.CORS_ORIGIN || '*');
             
-            console.log('\n📋 Routes principales disponibles:');
-            console.log('   ├── /api/proprietes');
-            console.log('   ├── /api/auth');
-            console.log('   ├── /api/profile'); 
-            console.log('   ├── /api/paiements');
-            console.log('   ├── /api/reservations');
-            console.log('   └── /api/recherche');
+            // console.log('\n📋 Routes principales disponibles:');
+            // console.log('   ├── /api/proprietes');
+            // console.log('   ├── /api/auth');
+            // console.log('   ├── /api/profile'); 
+            // console.log('   ├── /api/paiements');
+            // console.log('   ├── /api/reservations');
+            // console.log('   └── /api/recherche');
             
-            console.log('\n🏠 Routes Propriétés (Avec Fonctionnalités Sociales):');
-            console.log('   ├── GET    /api/proprietes                    📋 Lister propriétés');
-            console.log('   ├── GET    /api/proprietes/:id               📄 Détails propriété');
-            console.log('   ├── GET    /api/proprietes/slug/:slug        🔗 Par slug SEO');
-            console.log('   ├── POST   /api/proprietes                   ➕ Créer propriété');
-            console.log('   ├── PUT    /api/proprietes/:id               ✏️ Modifier propriété');
-            console.log('   ├── DELETE /api/proprietes/:id               🗑️ Supprimer propriété');
+            // console.log('\n🏠 Routes Propriétés (Avec Fonctionnalités Sociales):');
+            // console.log('   ├── GET    /api/proprietes                    📋 Lister propriétés');
+            // console.log('   ├── GET    /api/proprietes/:id               📄 Détails propriété');
+            // console.log('   ├── GET    /api/proprietes/slug/:slug        🔗 Par slug SEO');
+            // console.log('   ├── POST   /api/proprietes                   ➕ Créer propriété');
+            // console.log('   ├── PUT    /api/proprietes/:id               ✏️ Modifier propriété');
+            // console.log('   ├── DELETE /api/proprietes/:id               🗑️ Supprimer propriété');
             
-            console.log('\n❤️  Fonctionnalités Sociales (Nouvelles):');
-            console.log('   ├── POST   /api/proprietes/:id/vues          👁️ Enregistrer vue');
-            console.log('   ├── POST   /api/proprietes/:id/likes         ❤️ Toggle like');
-            console.log('   ├── GET    /api/proprietes/:id/likes         👥 Voir likes');
-            console.log('   ├── POST   /api/proprietes/:id/commentaires  💬 Ajouter commentaire');
-            console.log('   ├── GET    /api/proprietes/:id/commentaires  💭 Voir commentaires');
-            console.log('   ├── POST   /api/proprietes/:id/partages      📤 Enregistrer partage');
-            console.log('   ├── GET    /api/proprietes/:id/statistiques  📊 Statistiques détaillées');
-            console.log('   └── GET    /api/proprietes/populaires/trending 🏆 Propriétés populaires');
+            // console.log('\n❤️  Fonctionnalités Sociales (Nouvelles):');
+            // console.log('   ├── POST   /api/proprietes/:id/vues          👁️ Enregistrer vue');
+            // console.log('   ├── POST   /api/proprietes/:id/likes         ❤️ Toggle like');
+            // console.log('   ├── GET    /api/proprietes/:id/likes         👥 Voir likes');
+            // console.log('   ├── POST   /api/proprietes/:id/commentaires  💬 Ajouter commentaire');
+            // console.log('   ├── GET    /api/proprietes/:id/commentaires  💭 Voir commentaires');
+            // console.log('   ├── POST   /api/proprietes/:id/partages      📤 Enregistrer partage');
+            // console.log('   ├── GET    /api/proprietes/:id/statistiques  📊 Statistiques détaillées');
+            // console.log('   └── GET    /api/proprietes/populaires/trending 🏆 Propriétés populaires');
             
-            console.log('\n🔍 Routes Recherche & Filtres:');
-            console.log('   ├── GET /api/proprietes/recherche/avancee      🔎 Recherche avancée');
-            console.log('   ├── GET /api/proprietes/recherche/rapide       ⚡ Recherche rapide');
-            console.log('   ├── GET /api/proprietes/recherche/suggestions  💡 Suggestions');
-            console.log('   ├── GET /api/proprietes/recherche/filtres      🎚️ Filtres disponibles');
-            console.log('   └── GET /api/proprietes/recherche/caracteristiques 📋 Caractéristiques');
+            // console.log('\n🔍 Routes Recherche & Filtres:');
+            // console.log('   ├── GET /api/proprietes/recherche/avancee      🔎 Recherche avancée');
+            // console.log('   ├── GET /api/proprietes/recherche/rapide       ⚡ Recherche rapide');
+            // console.log('   ├── GET /api/proprietes/recherche/suggestions  💡 Suggestions');
+            // console.log('   ├── GET /api/proprietes/recherche/filtres      🎚️ Filtres disponibles');
+            // console.log('   └── GET /api/proprietes/recherche/caracteristiques 📋 Caractéristiques');
             
-            console.log('\n📅 Routes Réservations:');
-            console.log('   ├── POST /api/reservations/request        📋 Demander réservation');
-            console.log('   ├── POST /api/reservations/:id/payment    💳 Payer réservation');
-            console.log('   ├── POST /api/reservations/webhook/payment 🔔 Webhook paiement');
-            console.log('   ├── GET  /api/reservations/user/:id       👤 Réservations utilisateur');
-            console.log('   └── GET  /api/reservations/property/:id/slots/:date 📅 Créneaux disponibles');
+            // console.log('\n📅 Routes Réservations:');
+            // console.log('   ├── POST /api/reservations/request        📋 Demander réservation');
+            // console.log('   ├── POST /api/reservations/:id/payment    💳 Payer réservation');
+            // console.log('   ├── POST /api/reservations/webhook/payment 🔔 Webhook paiement');
+            // console.log('   ├── GET  /api/reservations/user/:id       👤 Réservations utilisateur');
+            // console.log('   └── GET  /api/reservations/property/:id/slots/:date 📅 Créneaux disponibles');
             
-            console.log('\n💰 Routes Paiements:');
-            console.log('   ├── POST /api/paiements                   💸 Créer paiement');
-            console.log('   ├── GET  /api/paiements/stats             📊 Statistiques');
-            console.log('   ├── GET  /api/paiements/user/:id          👤 Paiements utilisateur');
-            console.log('   ├── GET  /api/paiements/reservation/:id   📅 Paiement réservation');
-            console.log('   ├── PUT  /api/paiements/:id/status        🔄 Statut paiement');
-            console.log('   └── PUT  /api/paiements/:id/refund        💰 Remboursement');
+            // console.log('\n💰 Routes Paiements:');
+            // console.log('   ├── POST /api/paiements                   💸 Créer paiement');
+            // console.log('   ├── GET  /api/paiements/stats             📊 Statistiques');
+            // console.log('   ├── GET  /api/paiements/user/:id          👤 Paiements utilisateur');
+            // console.log('   ├── GET  /api/paiements/reservation/:id   📅 Paiement réservation');
+            // console.log('   ├── PUT  /api/paiements/:id/status        🔄 Statut paiement');
+            // console.log('   └── PUT  /api/paiements/:id/refund        💰 Remboursement');
             
-            console.log('\n👤 Routes Profil & Avatar:');
-            console.log('   ├── POST /api/profile/upload-avatar       🖼️ Upload avatar');
-            console.log('   ├── DELETE /api/profile/avatar            🗑️ Supprimer avatar');
-            console.log('   └── GET /api/profile/upload-health        ❤️ Santé upload');
+            // console.log('\n👤 Routes Profil & Avatar:');
+            // console.log('   ├── POST /api/profile/upload-avatar       🖼️ Upload avatar');
+            // console.log('   ├── DELETE /api/profile/avatar            🗑️ Supprimer avatar');
+            // console.log('   └── GET /api/profile/upload-health        ❤️ Santé upload');
             
-            console.log('\n🔐 Routes Authentification:');
-            console.log('   ├── POST /api/auth/register               📝 Inscription');
-            console.log('   ├── POST /api/auth/login                  🔑 Connexion');
-            console.log('   ├── POST /api/auth/logout                 🚪 Déconnexion');
-            console.log('   ├── GET  /api/auth/me                     👤 Profil courant');
-            console.log('   └── POST /api/auth/refresh                🔄 Rafraîchir token');
+            // console.log('\n🔐 Routes Authentification:');
+            // console.log('   ├── POST /api/auth/register               📝 Inscription');
+            // console.log('   ├── POST /api/auth/login                  🔑 Connexion');
+            // console.log('   ├── POST /api/auth/logout                 🚪 Déconnexion');
+            // console.log('   ├── GET  /api/auth/me                     👤 Profil courant');
+            // console.log('   └── POST /api/auth/refresh                🔄 Rafraîchir token');
         });
 
         // Gestion des erreurs de démarrage du serveur

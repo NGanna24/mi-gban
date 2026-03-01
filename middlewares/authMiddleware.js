@@ -5,8 +5,8 @@ export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-  console.log('🔐 Middleware auth - Header:', authHeader);
-  console.log('🔐 Token reçu:', token ? 'Présent' : 'Absent');
+  // console.log('🔐 Middleware auth - Header:', authHeader);
+  // console.log('🔐 Token reçu:', token ? 'Présent' : 'Absent');
 
   if (!token) { 
     console.log('❌ Aucun token fourni');
@@ -34,9 +34,9 @@ export const authenticateToken = (req, res, next) => {
     // ✅ DÉFINIR req.id_utilisateur POUR VOTRE MODÈLE
     req.id_utilisateur = decoded.id;
     
-    console.log('👤 Utilisateur authentifié:');
-    console.log('   - ID utilisateur:', req.id_utilisateur);
-    console.log('   - Données complètes:', req.user);
+    // console.log('👤 Utilisateur authentifié:');
+    // console.log('   - ID utilisateur:', req.id_utilisateur);
+    // console.log('   - Données complètes:', req.user);
     
     next();
   });

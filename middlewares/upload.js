@@ -208,7 +208,7 @@ const cleanOrphanedFiles = async (maxAgeHours = 24) => {
     await cleanDirectory(avatarsDir);
     await cleanDirectory(tempDir);
     
-    console.log(`✅ Nettoyage terminé: ${cleanedCount} fichiers supprimés`);
+    // console.log(`✅ Nettoyage terminé: ${cleanedCount} fichiers supprimés`);
     return cleanedCount;
     
   } catch (error) {

@@ -2367,285 +2367,298 @@ async modifierPropriete(req, res) {
     }
   },
 
-// 📱 MÉTHODE POUR L'ACCUEIL - VERSION AVEC SCORING INTELLIGENT
-async getProprietesAccueil(req, res) {
-  try {
-    const { id_utilisateur } = req.user || {};
-    const { limit = 20 } = req.query;
+  // 📱 MÉTHODE POUR L'ACCUEIL - VERSION CORRIGÉE
+  async getProprietesAccueil(req, res) {
+    try {
+      const { id_utilisateur } = req.user || {};
+      const { limit = 20 } = req.query;
 
-    console.log('Chargement accueil pour:', { 
-      id_utilisateur,  
-      hasUser: !!id_utilisateur 
-    });
-
-    let proprietes = [];
-    let typeContenu = 'decouverte';
-    let metadata = {
-      hasUser: !!id_utilisateur,
-      limit: parseInt(limit),
-      preferencesUtilisees: false,
-      fallbackUtilise: false,
-      scoringDetails: {}
-    };
-
-    // ✅ FONCTION DE SCORING DES PROPRIÉTÉS SELON LES PRÉFÉRENCES
-    const scorerProprietes = (proprietes, preferences) => {
-      if (!proprietes || !proprietes.length || !preferences) {
-        return proprietes;
-      }
-
-      const { villes_preferees = [], types_bien = [], quartiers_preferes = [], budget_max } = preferences;
-      
-      // Créer une copie avec scores
-      const proprietesScored = proprietes.map(prop => {
-        let score = 0;
-        const matchDetails = [];
-
-        // 🏆 CRITÈRE 1: Correspondance exacte de la ville (poids fort)
-        if (villes_preferees.includes(prop.ville)) {
-          score += 50;
-          matchDetails.push('ville_principale');
-        } else if (villes_preferees.some(v => prop.ville?.toLowerCase().includes(v.toLowerCase()))) {
-          score += 30; // Correspondance partielle
-          matchDetails.push('ville_similaire');
-        }
-
-        // 🏠 CRITÈRE 2: Type de bien correspondant (poids moyen)
-        if (types_bien.includes(prop.type_propriete)) {
-          score += 30;
-          matchDetails.push('type_bien');
-        }
-
-        // 📍 CRITÈRE 3: Quartier correspondant (poids fort car précis)
-        if (quartiers_preferes.length > 0) {
-          if (quartiers_preferes.includes(prop.quartier)) {
-            score += 40;
-            matchDetails.push('quartier_exact');
-          } else if (prop.quartier && quartiers_preferes.some(q => 
-            prop.quartier.toLowerCase().includes(q.toLowerCase()) || 
-            q.toLowerCase().includes(prop.quartier.toLowerCase())
-          )) {
-            score += 20;
-            matchDetails.push('quartier_proche');
-          }
-        }
-
-        // 💰 CRITÈRE 4: Dans le budget (bonus)
-        if (budget_max && prop.prix <= budget_max) {
-          score += 25;
-          matchDetails.push('dans_budget');
-        } else if (budget_max && prop.prix <= budget_max * 1.2) {
-          score += 10; // Légèrement au-dessus du budget
-          matchDetails.push('proche_budget');
-        }
-
-        // ⭐ CRITÈRE 5: Propriété récente (bonus de fraîcheur)
-        const dateCreation = new Date(prop.date_creation);
-        const joursDepuisCreation = Math.floor((Date.now() - dateCreation) / (1000 * 60 * 60 * 24));
-        if (joursDepuisCreation < 7) {
-          score += 15; // Très récente
-          matchDetails.push('nouveaute');
-        } else if (joursDepuisCreation < 30) {
-          score += 5; // Récente
-          matchDetails.push('recente');
-        }
-
-        return {
-          ...prop,
-          score,
-          matchDetails,
-          // Ajouter des badges pour le frontend
-          badges: [
-            ...(matchDetails.includes('ville_principale') ? ['📍 Ville préférée'] : []),
-            ...(matchDetails.includes('type_bien') ? ['🏠 Type recherché'] : []),
-            ...(matchDetails.includes('quartier_exact') ? ['🎯 Quartier idéal'] : []),
-            ...(matchDetails.includes('nouveaute') ? ['✨ Nouveau'] : []),
-            ...(matchDetails.includes('dans_budget') ? ['💰 Dans votre budget'] : [])
-          ]
-        };
+      console.log('Chargement accueil pour:', { 
+        id_utilisateur,  
+        hasUser: !!id_utilisateur 
       });
 
-      // Trier par score décroissant
-      const triees = proprietesScored.sort((a, b) => b.score - a.score);
-      
-      // Statistiques de scoring
-      metadata.scoringDetails = {
-        scores: triees.map(p => p.score),
-        matchMoyen: Math.round(triees.reduce((acc, p) => acc + p.score, 0) / triees.length),
-        meilleurScore: triees[0]?.score || 0
+      let proprietes = [];
+      let typeContenu = 'decouverte';
+      let metadata = {
+        hasUser: !!id_utilisateur,
+        limit: parseInt(limit),
+        preferencesUtilisees: false,
+        fallbackUtilise: false
       };
 
-      return triees;
-    };
-
-    // ✅ MÉTHODE UTILITAIRE INTERNE POUR FORMATER LES URLs (inchangée)
-    const formaterUrlsProprietes = (proprietes, req) => {
-      if (!proprietes || !Array.isArray(proprietes)) {
-        console.log('⚠️ Aucune propriété à formater');
-        return [];
-      }
-
-      return proprietes.map(propriete => {
-        try {
-          if (!propriete) return null;
-
-          const mediasAvecUrls = propriete.medias ? propriete.medias.map(media => ({
-            ...media,
-            url: media.url ? `${req.protocol}://${req.get('host')}/uploads/properties/${media.url}` : null
-          })) : [];
-
-          const mediaPrincipalFormate = mediasAvecUrls.find(m => m.est_principale) || mediasAvecUrls[0];
-
-          return {
-            ...propriete,
-            media_principal: mediaPrincipalFormate?.url || 
-                            (propriete.media_principal ? 
-                              `${req.protocol}://${req.get('host')}/uploads/properties/${propriete.media_principal}` : null),
-            medias: mediasAvecUrls,
-            avatar: propriete.avatar ? 
-                    `${req.protocol}://${req.get('host')}/uploads/avatars/${propriete.avatar}` : null
-          };
-        } catch (formatError) {
-          console.error('❌ Erreur formatage propriété:', formatError);
-          return propriete;
-        }
-      }).filter(propriete => propriete !== null);
-    };
-
-    // ✅ LOGIQUE PRINCIPALE AMÉLIORÉE
-    if (id_utilisateur) {
-      console.log('👤 Utilisateur connecté - recommandations personnalisées', id_utilisateur);
-      
-      try {
-        const preferences = await PreferenceUtilisateur.getByUserId(id_utilisateur);
-        console.log('🔍 Préférences utilisateur:', preferences);
+      // ✅ MÉTHODE UTILITAIRE INTERNE POUR VÉRIFIER LES PRÉFÉRENCES
+      const aDesPreferencesValides = (preferences) => {
+        if (!preferences) return false;
+        console.log('🔍 🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍Vérification préférences:', preferences);
         
-        if (preferences) {
-          const villesPreferees = preferences.villes_preferees || [];
-          const typesBien = preferences.types_bien || [];
-          
-          console.log('🎯 Utilisateur avec préférences - villes:', villesPreferees, 'projet:', preferences.projet);
-          
-          // Récupérer PLUS de propriétés pour avoir un bon échantillon après scoring
-          const proprietesBrutes = await Propriete.getProprieteParVilleUser(
-            villesPreferees,
-            parseInt(limit) * 2, // Récupérer 2x plus pour le scoring
-            typesBien,
-            preferences.projet,
-            preferences.budget_max,
-            preferences.quartiers_preferes || []
-          );
-          
-          // Appliquer le scoring intelligent
-          proprietes = scorerProprietes(proprietesBrutes, preferences);
-          
-          // Ne garder que le nombre demandé après scoring
-          proprietes = proprietes.slice(0, parseInt(limit));
-          
-          typeContenu = 'recommandations_personnalisees_scorees';
-          metadata.preferencesUtilisees = true;
-          metadata.detailsPreference = {
-            villes: villesPreferees.length,
-            types_bien: typesBien.length,
-            quartiers: preferences.quartiers_preferes?.length || 0,
-            projet: preferences.projet || 'non_defini',
-            avecScoring: true
-          };
-        }
-      } catch (prefError) {
-        console.error('❌ Erreur préférences:', prefError);
+        const aDesVilles = preferences.villes_preferees && 
+                          Array.isArray(preferences.villes_preferees) && 
+                          preferences.villes_preferees.length > 0;
         
-        // Fallback aux propriétés populaires
+        const aDesTypes = preferences.types_bien && 
+                         Array.isArray(preferences.types_bien) && 
+                         preferences.types_bien.length > 0;
+        
+        const aUnProjet = preferences.projet && 
+                         ['acheter', 'louer', 'visiter'].includes(preferences.projet);
+        
+        console.log('🔍 Validation préférences:', {
+          villes: aDesVilles,
+          types: aDesTypes, 
+          projet: aUnProjet,
+          villes_liste: preferences.villes_preferees,
+          types_liste: preferences.types_bien
+        });
+        
+        // Considérer valide si au moins des villes OU des types sont définis
+        return aDesVilles || aDesTypes || aUnProjet;
+      };
+
+      // ✅ MÉTHODE UTILITAIRE INTERNE POUR FORMATER LES URLs
+      const formaterUrlsProprietes = (proprietes, req) => {
+        if (!proprietes || !Array.isArray(proprietes)) {
+          console.log('⚠️ Aucune propriété à formater');
+          return [];
+        }
+
+        return proprietes.map(propriete => {
+          try {
+            if (!propriete) return null;
+
+            // console.log("Debug propriété ùùùùùùùùùùùùùùùùùùùùùùùùùùùù:", propriete);
+
+            // Formater les médias avec URLs complètes
+            const mediasAvecUrls = propriete.medias ? propriete.medias.map(media => ({
+              ...media,
+              url: media.url ? `${req.protocol}://${req.get('host')}/uploads/properties/${media.url}` : null
+            })) : [];
+
+            // Trouver le média principal formaté
+            const mediaPrincipalFormate = mediasAvecUrls.find(m => m.est_principale) || mediasAvecUrls[0];
+           
+            return {
+              ...propriete,
+              // Média principal avec URL complète
+              media_principal: mediaPrincipalFormate?.url || 
+                              (propriete.media_principal ? 
+                                `${req.protocol}://${req.get('host')}/uploads/properties/${propriete.media_principal}` : null),
+              // Tous les médias avec URLs complètes
+              medias: mediasAvecUrls,
+              // URL complète pour l'avatar utilisateur si présent
+              avatar: propriete.avatar ? 
+                      `${req.protocol}://${req.get('host')}/uploads/avatars/${propriete.avatar}` : null
+
+             
+            };
+          } catch (formatError) {
+            console.error('❌ Erreur formatage propriété:', formatError);
+            return propriete; // Retourner la propriété non formatée en cas d'erreur
+          }
+        }).filter(propriete => propriete !== null); // Filtrer les null
+      };
+
+      // ✅ LOGIQUE AMÉLIORÉE AVEC GESTION D'ERREUR ROBUSTE
+      if (id_utilisateur) {
+        // UTILISATEUR CONNECTÉ 
         try {
-          proprietes = await Propriete.getPopulaires(parseInt(limit));
-          typeContenu = 'populaires_fallback';
-          metadata.fallbackUtilise = true;
-          metadata.raisonFallback = 'erreur_preferences';
-        } catch (popError) {
-          console.error('❌ Erreur fallback populaires:', popError);
+          const preferences = await PreferenceUtilisateur.getByUserId(id_utilisateur);
+          
+          console.log('🔍 Préférences utilisateur:', preferences);
+          
+          // ✅ CORRECTION: Utiliser la fonction interne
+          const preferencesValides = preferences && aDesPreferencesValides(preferences);
+          
+          if (preferencesValides) {
+            // ✅ AVEC PRÉFÉRENCES VALIDES : recommandations personnalisées
+            // console.log('🎯 Génération recommandations personnalisées...');
+            
+            try {
+              proprietes = await Propriete.getProprieteParVilleUser(
+                preferences.villes_preferees || [],
+                parseInt(limit),
+                preferences.types_bien || []
+              );
+              
+              typeContenu = 'recommandations_personnalisees';
+              metadata.preferencesUtilisees = true;
+              metadata.detailsPreference = {
+                villes: preferences.villes_preferees?.length || 0,
+                types_bien: preferences.types_bien?.length || 0,
+                projet: preferences.projet || 'non_defini'
+              };
+              
+            } catch (recoError) {
+              console.error('❌ Erreur recommandations personnalisées:', recoError);
+              // Fallback aux propriétés populaires
+              proprietes = await Propriete.getPopulaires(parseInt(limit)); // ✅ CORRECTION: utiliser getPopulaires
+              typeContenu = 'populaires_fallback_reco';
+              metadata.fallbackUtilise = true;
+              metadata.raisonFallback = 'erreur_recommandations';
+            }
+            
+          } else {
+            // ✅ UTILISATEUR SANS PRÉFÉRENCES : propriétés populaires
+            console.log('🏆 Utilisateur sans préférences - propriétés populaires');
+            
+            try {
+              proprietes = await Propriete.getPopulaires(parseInt(limit)); // ✅ CORRECTION: utiliser getPopulaires
+              typeContenu = 'populaires';
+              metadata.fallbackUtilise = true;
+              metadata.raisonFallback = 'aucune_preference';
+            } catch (popError) {
+              console.error('❌ Erreur propriétés populaires:', popError);
+              // Fallback aux propriétés récentes
+              proprietes = await Propriete.findAll(parseInt(limit), 0, {});
+              typeContenu = 'recentes_fallback_pop';
+              metadata.fallbackUtilise = true;
+              metadata.raisonFallback = 'erreur_populaires';
+            }
+          }
+        } catch (prefError) {
+          console.error('❌ Erreur préférences:', prefError);
+          // ✅ FALLBACK : propriétés populaires
+          try {
+            proprietes = await Propriete.getPopulaires(parseInt(limit)); // ✅ CORRECTION: utiliser getPopulaires
+            typeContenu = 'populaires_fallback';
+            metadata.fallbackUtilise = true;
+            metadata.raisonFallback = 'erreur_preferences';
+          } catch (popError) {
+            console.error('❌ Erreur fallback propriétés populaires:', popError);
+            // Fallback aux propriétés récentes
+            proprietes = await Propriete.findAll(parseInt(limit), 0, {});
+            typeContenu = 'recentes_fallback';
+            metadata.fallbackUtilise = true;
+            metadata.raisonFallback = 'erreur_fallback_populaires';
+          }
+        }
+      } else {
+        // ✅ VISITEUR NON CONNECTÉ - Mix découverte
+        console.log('👤 Visiteur - mix découverte');
+        try {
+          proprietes = await Propriete.getMixDecouverte(parseInt(limit));
+          typeContenu = 'decouverte';
+        } catch (mixError) {
+          console.error('❌ Erreur mix découverte:', mixError);
+          // Fallback aux propriétés récentes
           proprietes = await Propriete.findAll(parseInt(limit), 0, {});
-          typeContenu = 'recentes_fallback';
+          typeContenu = 'recentes_fallback_mix';
           metadata.fallbackUtilise = true;
+          metadata.raisonFallback = 'erreur_mix_decouverte';
         }
       }
-    } else {
-      // Visiteur non connecté - propriétés populaires
-      try {
-        proprietes = await Propriete.getPopulaires(parseInt(limit));
-        typeContenu = 'populaires';
-      } catch (error) {
-        console.error('❌ Erreur chargement populaires:', error);
-        proprietes = await Propriete.findAll(parseInt(limit), 0, {});
-        typeContenu = 'recentes';
+
+      // ✅ GARANTIR QU'ON A TOUJOURS DES RÉSULTATS
+      if (!proprietes || proprietes.length === 0) {
+        console.log('⚠️ Aucun résultat - fallback aux propriétés récentes');
+        try {
+          proprietes = await Propriete.findAll(parseInt(limit), 0, {});
+          typeContenu = 'fallback_recentes';
+          metadata.fallbackUtilise = true;
+          metadata.raisonFallback = 'aucun_resultat';
+        } catch (fallbackError) {
+          console.error('❌ Erreur fallback ultime:', fallbackError);
+          proprietes = [];
+        }
       }
-    }
 
-    // ✅ GARANTIR QU'ON A TOUJOURS DES RÉSULTATS
-    if (!proprietes || proprietes.length === 0) {
-      console.log('⚠️ Aucun résultat - fallback aux propriétés récentes');
-      proprietes = await Propriete.findAll(parseInt(limit), 0, {});
-      typeContenu = 'fallback_recentes';
-      metadata.fallbackUtilise = true;
-    }
+      // ✅ FORMATAGE DES RÉSULTATS
+      // console.log(`✅ Format unifié - ${proprietes.length} propriétés (type: ${typeContenu})`);
 
-    // ✅ FORMATAGE FINAL
-    const proprietesAvecUrls = formaterUrlsProprietes(proprietes, req);
-    
-    // ✅ LOGS DE DÉBOGAGE
-    console.log(`📊 Résultats finaux - ${proprietesAvecUrls.length} propriétés (type: ${typeContenu})`);
-    if (metadata.scoringDetails?.scores) {
-      console.log('🎯 Distribution des scores:', metadata.scoringDetails.scores.slice(0, 5));
-    }
+      // ✅ CORRECTION: Utiliser la fonction interne
+      const proprietesAvecUrlsCompletes = formaterUrlsProprietes(proprietes, req);
 
-    res.json({
-      success: true,
-      data: proprietesAvecUrls,
-      metadata: {
-        ...metadata,
-        total: proprietesAvecUrls.length,
-        type: typeContenu,
-        timestamp: new Date().toISOString()
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Erreur critique accueil propriétés:', error);
-    
-    // Fallback ultime
-    try {
-      const proprietesFallback = await Propriete.findAll(
-        parseInt(req.query.limit) || 10, 
-        0, 
-        {}
-      );
-      
-      const proprietesFallbackAvecUrls = proprietesFallback.map(prop => ({
-        ...prop,
-        media_principal: prop.media_principal ? 
-          `${req.protocol}://${req.get('host')}/uploads/properties/${prop.media_principal}` : null,
-        avatar: prop.avatar ? 
-          `${req.protocol}://${req.get('host')}/uploads/avatars/${prop.avatar}` : null
-      }));
-      
-      res.json({
+      // ✅ FORMATAGE DE LA RÉPONSE ENRICHIE
+      const response = {
         success: true,
-        data: proprietesFallbackAvecUrls,
+        data: proprietesAvecUrlsCompletes,
         metadata: {
-          total: proprietesFallbackAvecUrls.length,
-          type: 'fallback_ultime',
-          hasUser: false,
+          ...metadata,
+          total: proprietesAvecUrlsCompletes.length,
+          type: typeContenu,
           timestamp: new Date().toISOString()
         }
-      });
-    } catch (fallbackError) {
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors du chargement des propriétés',
-        error: error.message
-      });
+      };
+
+      res.json(response);
+
+    } catch (error) {
+      console.error('❌ Erreur critique accueil propriétés:', error);
+      
+      // ✅ FALLBACK ULTIME AVEC GESTION D'ERREUR
+      try {
+        const proprietesFallback = await Propriete.findAll(
+          parseInt(req.query.limit) || 10, 
+          0, 
+          {}
+        );
+        
+        // ✅ MÉTHODE UTILITAIRE INTERNE POUR FORMATER LES URLs (copiée pour le fallback)
+        const formaterUrlsProprietesFallback = (proprietes, req) => {
+          if (!proprietes || !Array.isArray(proprietes)) {
+            console.log('⚠️ Aucune propriété à formater');
+            return [];
+          }
+
+          return proprietes.map(propriete => {
+            try { 
+              if (!propriete) return null;
+
+              // Formater les médias avec URLs complètes
+              const mediasAvecUrls = propriete.medias ? propriete.medias.map(media => ({
+                ...media,
+                url: media.url ? `${req.protocol}://${req.get('host')}/uploads/properties/${media.url}` : null
+              })) : [];
+
+              // Trouver le média principal formaté
+              const mediaPrincipalFormate = mediasAvecUrls.find(m => m.est_principale) || mediasAvecUrls[0];
+
+              return {
+                ...propriete,
+                // Média principal avec URL complète
+                media_principal: mediaPrincipalFormate?.url || 
+                                (propriete.media_principal ? 
+                                  `${req.protocol}://${req.get('host')}/uploads/properties/${propriete.media_principal}` : null),
+                // Tous les médias avec URLs complètes
+                medias: mediasAvecUrls,
+                // URL complète pour l'avatar utilisateur si présent
+                avatar: propriete.avatar ? 
+                        `${req.protocol}://${req.get('host')}/uploads/avatars/${propriete.avatar}` : null
+              };
+            } catch (formatError) {
+              console.error('❌ Erreur formatage propriété:', formatError);
+              return propriete; // Retourner la propriété non formatée en cas d'erreur
+            }
+          }).filter(propriete => propriete !== null); // Filtrer les null
+        };
+        
+        const proprietesFallbackAvecUrls = formaterUrlsProprietesFallback(proprietesFallback, req);
+        
+        res.json({
+          success: true,
+          data: proprietesFallbackAvecUrls,
+          metadata: {
+            total: proprietesFallbackAvecUrls.length,
+            type: 'fallback_ultime',
+            hasUser: false,
+            erreur: error.message,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (fallbackError) {
+        console.error('❌ Erreur fallback ultime:', fallbackError);
+        res.status(500).json({
+          success: false,
+          message: 'Erreur lors du chargement des propriétés',
+          error: error.message,
+          metadata: {
+            type: 'erreur_critique',
+            timestamp: new Date().toISOString()
+          }
+        });
+      }
     }
   }
-}
 };
 
 export default ProprieteController;

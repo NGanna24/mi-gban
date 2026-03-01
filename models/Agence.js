@@ -436,7 +436,7 @@ static async getDashboardMetrics(id_agence) {
     
     try {
       notificationsNonLues = await Notification.countUnread(id_agence);
-      console.log(`📊 Notifications non lues pour agence ${id_agence}:`, notificationsNonLues);
+      // console.log(`📊 Notifications non lues pour agence ${id_agence}:`, notificationsNonLues);
       
       // Optionnel: Récupérer plus de stats si besoin
       notificationsStats = {

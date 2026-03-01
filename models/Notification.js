@@ -77,9 +77,9 @@ class Notification {
       const limitNum = parseInt(limit);
       const offset = (pageNum - 1) * limitNum;
       
-      console.log('🔍 Récupération notifications utilisateur:', { 
-        userId, page: pageNum, limit: limitNum, offset 
-      });
+      // console.log('🔍 Récupération notifications utilisateur:', { 
+      //   userId, page: pageNum, limit: limitNum, offset 
+      // });
 
       // Vérifier que l'utilisateur existe
       const [userCheck] = await connection.execute(
@@ -115,7 +115,7 @@ class Notification {
         LIMIT ? OFFSET ?
       `, [userId, limitNum, offset]);
 
-      console.log(`📊 ${notifications.length} notifications SQL directes pour utilisateur ${userId}`);
+      // console.log(`📊 ${notifications.length} notifications SQL directes pour utilisateur ${userId}`);
 
       // 2. Compter le total
       const [totalResult] = await connection.query(
@@ -270,7 +270,7 @@ class Notification {
       );
 
       const count = result[0].count;
-      console.log('🔢 Notifications non lues pour', id_utilisateur, ':', count);
+      // console.log('🔢 Notifications non lues pour', id_utilisateur, ':', count);
 
       return count;
 

@@ -31,7 +31,8 @@ const upload = multer({
 });
 
 // ==================== ROUTES GET (LECTURE) ====================
- 
+ router.get('/geocode', ProprieteController.getQuartierFromCoordinatesAPI);
+
 router.get('/', ProprieteController.listerProprietes);
 router.get('/accueil',authenticateToken, ProprieteController.getProprietesAccueil);
 router.get('/agence/:id_utilisateur', authenticateToken, ProprieteController.getProprietesEnFonctionDeAgence);
@@ -76,6 +77,5 @@ router.delete('/media/:id_media', ProprieteController.supprimerMedia);
 
 
 // Dans votre fichier de routes
-router.get('/proprietes/geocode', ProprieteController.getQuartierFromCoordinatesAPI);
 
 export default router;

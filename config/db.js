@@ -26,11 +26,11 @@ const initDataBase = async () => {
         // Acquérir une connexion depuis le pool
         connection = await pool.getConnection();
 
-        console.log("Connexion à la base de données établie avec succès");
+        // console.log("Connexion à la base de données établie avec succès");
 
         // Exécuter le script SQL de création des tables
         await connection.query(creation_tables.creation_tables);
-        console.log("Tables créées avec succès");
+        // console.log("Tables créées avec succès");
 
         
         

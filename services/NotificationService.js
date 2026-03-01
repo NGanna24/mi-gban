@@ -23,12 +23,12 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
   try {
     // 1. Vérifier que le token est valide pour Expo
     if (!expoPushToken) {
-      console.error('❌ Token manquant'); 
+      console.error(' Token manquant'); 
       return { success: false, error: 'Token manquant' };
     }
 
     if (!Expo.isExpoPushToken(expoPushToken)) {
-      console.error(`❌ Token Expo invalide: ${expoPushToken?.substring(0, 30)}...`);
+      console.error(`Token Expo invalide: ${expoPushToken?.substring(0, 30)}...`);
       return { success: false, error: 'Token Expo invalide' };
     }
 
@@ -36,7 +36,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
     const message = {
       to: expoPushToken,
       sound: 'default',
-      title: title, // ✅ "title" en anglais pour Expo
+      title: title, //  "title" en anglais pour Expo
       body: body,
       data: data,
       channelId: 'alertes-immobilieres',
@@ -54,11 +54,11 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
     const tickets = await expo.sendPushNotificationsAsync([message]);
     const ticket = tickets[0];
 
-    console.log('✅ Ticket Expo reçu:', ticket);
+    console.log(' Ticket Expo reçu:', ticket);
 
     // 4. Analyser la réponse
     if (ticket.status === 'ok') {
-      console.log('✅ Notification envoyée avec succès via Expo');
+      console.log(' Notification envoyée avec succès via Expo');
       
       // 5. Sauvegarder en BDD si userId fourni
       if (userId) {
@@ -70,7 +70,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
             type: notificationType,
             metadata: JSON.stringify(data)
           });
-          console.log('💾 Notification sauvegardée en BDD pour utilisateur:', userId);
+          console.log(' Notification sauvegardée en BDD pour utilisateur:', userId);
         } catch (dbError) {
           console.error('⚠️ Erreur sauvegarde BDD:', dbError);
         }
@@ -85,7 +85,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
 
     } else {
       // Gestion des erreurs Expo
-      console.error('❌ Erreur Expo:', ticket.message, ticket.details);
+      console.error(' Erreur Expo:', ticket.message, ticket.details);
       
       // Erreurs spécifiques
       if (ticket.details?.error === 'DeviceNotRegistered' || 
@@ -111,12 +111,12 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
     }
 
   } catch (error) {
-    console.error('❌ Erreur générale envoi notification:', error);
+    console.error(' Erreur générale envoi notification:', error);
     
     // Guide pour les erreurs de configuration
     if (error.message.includes('FCM') || error.message.includes('credentials')) {
       console.error(`
-❌❌❌ CONFIGURATION REQUISE ❌❌❌
+ CONFIGURATION REQUISE 
 
 Pour les notifications Android via Expo:
 
@@ -191,18 +191,18 @@ const sendBulkNotifications = async (notifications) => {
         console.log(`🔄 Envoi lot ${i + 1}/${chunks.length} (${chunks[i].length} notifications)...`);
         const tickets = await expo.sendPushNotificationsAsync(chunks[i]);
         allTickets.push(...tickets);
-        console.log(`✅ Lot ${i + 1} envoyé`);
+        console.log(` Lot ${i + 1} envoyé`);
       } catch (error) {
-        console.error(`❌ Erreur lot ${i + 1}:`, error);
+        console.error(`Erreur lot ${i + 1}:`, error);
         // Continuer avec les lots suivants
       }
     }
 
-    console.log(`🎉 ${allTickets.length} tickets reçus au total`);
+    console.log(` ${allTickets.length} tickets reçus au total`);
     return allTickets;
 
   } catch (error) {
-    console.error('❌ Erreur envoi notifications en lot:', error);
+    console.error(' Erreur envoi notifications en lot:', error);
     throw error;
   }
 };
@@ -216,7 +216,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     let validTokens = 0;
     let invalidTokens = 0;
     
-    console.log(`📤 Préparation de ${tokens.length} notifications...`);
+    console.log(`Préparation de ${tokens.length} notifications...`);
 
     // Préparer les messages pour chaque token valide
     for (const token of tokens) {
@@ -244,10 +244,10 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
       validTokens++;
     }
     
-    console.log(`✅ ${validTokens} tokens valides, ❌ ${invalidTokens} tokens invalides`);
+    console.log(` ${validTokens} tokens valides, ${invalidTokens} tokens invalides`);
     
     if (messages.length === 0) {
-      console.log('ℹ️ Aucun message valide à envoyer');
+      console.log(' Aucun message valide à envoyer');
       return [];
     }
     
@@ -261,28 +261,28 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       try {
-        console.log(`📨 Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
+        console.log(`Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
         tickets.push(...ticketChunk);
         totalSent += chunk.length;
         
-        console.log(`✅ Lot ${i + 1} envoyé avec succès`);
+        console.log(` Lot ${i + 1} envoyé avec succès`);
         
         // Petite pause entre les lots pour éviter le rate limiting
         if (i < chunks.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
-        console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
+        console.error(` Erreur envoi lot ${i + 1}:`, error);
       }
     }
     
-    console.log(`🎉 ${totalSent} notifications envoyées au total`);
+    console.log(` ${totalSent} notifications envoyées au total`);
     
     return tickets;
     
   } catch (error) {
-    console.error('❌ Erreur envoi notifications:', error);
+    console.error('Erreur envoi notifications:', error);
     throw error;
   }
 };
@@ -296,7 +296,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
  */
 const getAllUsers = async () => {
   try {
-    console.log('🔍 Récupération de tous les utilisateurs actifs...');
+    console.log(' Récupération de tous les utilisateurs actifs...');
     
     const query = `
       SELECT id_utilisateur 
@@ -305,12 +305,12 @@ const getAllUsers = async () => {
     `;
     
     const [users] = await pool.execute(query);
-    console.log(`📊 ${users.length} utilisateurs actifs trouvés`);
+    console.log(` ${users.length} utilisateurs actifs trouvés`);
     
     return users;
     
   } catch (error) {
-    console.error('❌ Erreur récupération utilisateurs:', error);
+    console.error('Erreur récupération utilisateurs:', error);
     return [];
   }
 };
@@ -330,7 +330,7 @@ const getUserProfile = async (id_utilisateur) => {
     
     return users.length > 0 ? users[0] : null;
   } catch (error) {
-    console.error('❌ Erreur récupération profil utilisateur:', error);
+    console.error('Erreur récupération profil utilisateur:', error);
     return null;
   }
 };
@@ -387,7 +387,7 @@ const getCaracteristiquesPrincipales = async (id_propriete) => {
 
     return caracteristiques;
   } catch (error) {
-    console.error('❌ Erreur récupération caractéristiques:', error);
+    console.error('Erreur récupération caractéristiques:', error);
     return [];
   }
 };
@@ -456,7 +456,7 @@ const propertyMatchesCriteria = (property, alert) => {
   // console.log('La propriété à vérifier *****************************************:', {property, alert});
   try {
     
-    console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, alert);
+    console.log(` Vérification critères pour propriété ${property.id_propriete}:`, alert);
 
     const normalizeText = (text) => {
       if (!text) return '';
@@ -469,7 +469,7 @@ const propertyMatchesCriteria = (property, alert) => {
         .trim();
     };
 
-    // ✅ CRITÈRE OBLIGATOIRE: La ville
+    //  CRITÈRE OBLIGATOIRE: La ville
     if (alert.ville && property.ville) {
       const villeRecherche = normalizeText(alert.ville);
       const villePropriete = normalizeText(property.ville);
@@ -479,24 +479,24 @@ const propertyMatchesCriteria = (property, alert) => {
                         calculateSimilarity(villePropriete, villeRecherche) > 0.7;
       
       if (!villeMatch) {
-        console.log(`❌ Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
+        console.log(`Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
         return false;
       }
-      console.log(`✅ Ville correspond: ${alert.ville} vs ${property.ville}`);
+      console.log(` Ville correspond: ${alert.ville} vs ${property.ville}`);
     } else {
-      console.log(`❌ Aucune ville spécifiée dans les critères`);
+      console.log(` Aucune ville spécifiée dans les critères`);
       return false;
     }
 
     // Vérifier le type de transaction
     if (alert.type_transaction && alert.type_transaction !== property.type_transaction) {
-      console.log(`❌ Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
+      console.log(` Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
       return false;
     }
 
     // Vérifier le type de propriété
     if (alert.type_propriete && alert.type_propriete !== property.type_propriete) {
-      console.log(`❌ Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
+      console.log(` Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
       return false;
     }
 
@@ -510,7 +510,7 @@ const propertyMatchesCriteria = (property, alert) => {
                            calculateSimilarity(quartierPropriete, quartierRecherche) > 0.6;
       
       if (!quartierMatch) {
-        console.log(`❌ Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
+        console.log(` Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
         return false;
       }
     }
@@ -521,7 +521,7 @@ const propertyMatchesCriteria = (property, alert) => {
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete < prixMin) {
-        console.log(`❌ Prix trop bas: ${prixPropriete} < ${prixMin}`);
+        console.log(` Prix trop bas: ${prixPropriete} < ${prixMin}`);
         return false;
       }
     }
@@ -532,16 +532,16 @@ const propertyMatchesCriteria = (property, alert) => {
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete > prixMax) {
-        console.log(`❌ Prix trop élevé: ${prixPropriete} > ${prixMax}`);
+        console.log(` Prix trop élevé: ${prixPropriete} > ${prixMax}`);
         return false;
       }
     }
 
-    console.log(`🎉 PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
+    console.log(` PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
     return true;
 
   } catch (error) {
-    console.error('❌ Erreur vérification critères:', error);
+    console.error(' Erreur vérification critères:', error);
     return false;
   }
 };
@@ -582,9 +582,9 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
     let messageBody = '';
     
     if (nomUtilisateur) {
-      messageBody = `Bonnes nouvelles ${nomUtilisateur} ! 🎉\n`;
+      messageBody = `Bonnes nouvelles ${nomUtilisateur} ! \n`;
     } else {
-      messageBody = `Bonnes nouvelles ! 🎉\n`;
+      messageBody = `Bonnes nouvelles ! \n`;
     }
     
     messageBody += `Un${typeProprieteFormate.startsWith('a') || typeProprieteFormate.startsWith('e') || typeProprieteFormate.startsWith('i') || typeProprieteFormate.startsWith('o') || typeProprieteFormate.startsWith('u') || typeProprieteFormate.startsWith('h') ? ' ' : 'e '}${typeProprieteFormate} `;
@@ -603,9 +603,9 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
     
     messageBody += `\n\n🏃‍♂️ Vite, venez voir !`;
     
-    let title = "🔔 Votre alerte immobilière !";
+    let title = " Votre alerte immobilière !";
     if (nomUtilisateur) {
-      title = `🔔 ${nomUtilisateur}, une propriété vous attend !`;
+      title = ` ${nomUtilisateur}, une propriété vous attend !`;
     }
 
     return {
@@ -623,10 +623,10 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
     };
 
   } catch (error) {
-    console.error('❌ Erreur préparation notification personnalisée:', error);
+    console.error(' Erreur préparation notification personnalisée:', error);
     
     return {
-      title: "🔔 Votre alerte immobilière !",
+      title: " Votre alerte immobilière !",
       body: `Nouvelle propriété correspondant à vos critères à ${property.ville || 'Abidjan'}`,
       data: {
         type: 'ALERT_MATCH',
@@ -646,7 +646,7 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
  */
 const getActiveAlerts = async () => {
   try {
-    console.log('🔔 Récupération des alertes actives...');
+    console.log(' Récupération des alertes actives...');
     
     const query = `
       SELECT 
@@ -675,12 +675,12 @@ const getActiveAlerts = async () => {
     `;
     
     const [alerts] = await pool.execute(query);
-    console.log(`📊 ${alerts.length} alertes actives trouvées`);
+    console.log(` ${alerts.length} alertes actives trouvées`);
     
     return alerts;
     
   } catch (error) {
-    console.error('❌ Erreur récupération alertes:', error);
+    console.error(' Erreur récupération alertes:', error);
     return [];
   }
 };
@@ -701,11 +701,11 @@ const getAllUserPushTokens = async () => {
     const [users] = await pool.execute(query);
     const tokens = users.map(user => user.expo_push_token).filter(token => token !== null);
     
-    console.log(`📋 ${tokens.length} tokens Expo récupérés`);
+    console.log(`${tokens.length} tokens Expo récupérés`);
     return tokens;
     
   } catch (error) {
-    console.error('❌ Erreur récupération tokens:', error);
+    console.error(' Erreur récupération tokens:', error);
     return [];
   }
 };
@@ -743,7 +743,7 @@ const prepareNewPropertyNotification = (property) => {
     : property.titre;
   
   return {
-    title: "🏠 Nouvelle propriété disponible!",
+    title: "Nouvelle propriété disponible!",
     body: `${titreTronque} - ${prixFormate} à ${property.ville || 'Abidjan'}`,
     data: {
       type: 'NEW_PROPERTY',
@@ -760,16 +760,16 @@ const prepareNewPropertyNotification = (property) => {
  */
 const saveNotificationsToDatabase = async (property) => {
   try {
-    console.log('💾 Sauvegarde notifications en BDD...');
+    console.log(' Sauvegarde notifications en BDD...');
     
     const allUsers = await getAllUsers();
     
     if (!allUsers || allUsers.length === 0) {
-      console.log('💾 Aucun utilisateur à notifier en BDD');
+      console.log(' Aucun utilisateur à notifier en BDD');
       return { saved: false, count: 0, errors: 0, total: 0 };
     }
 
-    console.log(`💾 ${allUsers.length} utilisateurs à notifier en BDD`);
+    console.log(` ${allUsers.length} utilisateurs à notifier en BDD`);
 
     let savedCount = 0;
     let errorCount = 0;
@@ -781,7 +781,7 @@ const saveNotificationsToDatabase = async (property) => {
         
         await Notification.create({
           id_utilisateur: user.id_utilisateur,
-          titre: "🏠 Nouvelle propriété disponible!",
+          titre: " Nouvelle propriété disponible!",
           message: message,
           type: 'nouvelle_propriete',
           metadata: JSON.stringify({
@@ -799,12 +799,12 @@ const saveNotificationsToDatabase = async (property) => {
         savedCount++;
 
       } catch (userError) {
-        console.error(`❌ Erreur utilisateur ${user.id_utilisateur}:`, userError.message);
+        console.error(` Erreur utilisateur ${user.id_utilisateur}:`, userError.message);
         errorCount++;
       }
     }
 
-    console.log(`💾 BDD: ${savedCount}/${allUsers.length} réussites, ${errorCount} erreurs`);
+    console.log(` BDD: ${savedCount}/${allUsers.length} réussites, ${errorCount} erreurs`);
     
     return {
       saved: savedCount > 0,
@@ -814,7 +814,7 @@ const saveNotificationsToDatabase = async (property) => {
     };
 
   } catch (error) {
-    console.error('❌ Erreur sauvegarde BDD:', error);
+    console.error(' Erreur sauvegarde BDD:', error);
     return {
       saved: false,
       count: 0,
@@ -830,11 +830,11 @@ const saveNotificationsToDatabase = async (property) => {
  */
 const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, messagePersonnalise) => {
   try {
-    console.log(`💾 Sauvegarde notification alerte pour utilisateur ${userId}...`);
+    console.log(` Sauvegarde notification alerte pour utilisateur ${userId}...`);
 
     const notificationId = await Notification.create({
       id_utilisateur: userId,
-      titre: "🔔 Votre alerte immobilière!",
+      titre: " Votre alerte immobilière!",
       message: messagePersonnalise,
       type: 'nouvelle_propriete',
       metadata: JSON.stringify({
@@ -850,11 +850,11 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
       })
     });
 
-    console.log(`✅ Notification alerte ${notificationId} sauvegardée`);
+    console.log(` Notification alerte ${notificationId} sauvegardée`);
     return notificationId;
     
   } catch (error) {
-    console.error('❌ Erreur sauvegarde notification alerte:', error);
+    console.error(' Erreur sauvegarde notification alerte:', error);
     return null;
   }
 };
@@ -865,7 +865,7 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
 const notifySingleUser = async (userToken, notification) => {
   try {
     if (!userToken || !Expo.isExpoPushToken(userToken)) {
-      console.log('❌ Token utilisateur invalide');
+      console.log(' Token utilisateur invalide');
       return { success: false, message: 'Token invalide' };
     }
 
@@ -884,15 +884,15 @@ const notifySingleUser = async (userToken, notification) => {
     const ticket = tickets[0];
     
     if (ticket.status === 'ok') {
-      console.log(`✅ Notification personnalisée envoyée: ${notification.title || notification.titre}`);
+      console.log(` Notification personnalisée envoyée: ${notification.title || notification.titre}`);
       return { success: true, ticket: ticket };
     } else {
-      console.log(`❌ Échec envoi notification: ${ticket.message}`);
+      console.log(` Échec envoi notification: ${ticket.message}`);
       return { success: false, message: ticket.message };
     }
     
   } catch (error) {
-    console.error('❌ Erreur notification utilisateur:', error);
+    console.error(' Erreur notification utilisateur:', error);
     return { success: false, message: error.message };
   }
 };
@@ -902,8 +902,8 @@ const notifySingleUser = async (userToken, notification) => {
  */
 const notifyUsersWithMatchingAlerts = async (property) => {
   try {
-    console.log('🎯 NOTIFICATION ALERTES PERSONNALISÉES');
-    console.log('📝 Propriété:', {
+    console.log(' NOTIFICATION ALERTES PERSONNALISÉES');
+    console.log(' Propriété:', {
       id: property.id_propriete,
       titre: property.titre,
       type: property.type_propriete,
@@ -913,7 +913,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
     const activeAlerts = await getActiveAlerts();
     
     if (activeAlerts.length === 0) {
-      console.log('ℹ️ Aucune alerte active trouvée');
+      console.log(' Aucune alerte active trouvée');
       return {
         success: true,
         message: 'Aucune alerte active',
@@ -922,7 +922,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
       };
     }
 
-    console.log(`🔍 Vérification de ${activeAlerts.length} alertes...`);
+    console.log(` Vérification de ${activeAlerts.length} alertes...`);
 
     let matchesFound = 0;
     let notificationsSent = 0;
@@ -930,26 +930,26 @@ const notifyUsersWithMatchingAlerts = async (property) => {
 
     for (const alert of activeAlerts) {
       try {
-        console.log(`🔍 Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
+        console.log(` Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
         
         // Passez l'objet alert complet, pas alert.criteres
         const matches = propertyMatchesCriteria(property, alert);
         
         if (matches) {
-          console.log(`🎉 ALERTE ${alert.id_alerte} CORRESPOND!`);
+          console.log(` ALERTE ${alert.id_alerte} CORRESPOND!`);
           matchesFound++;
           usersToNotify.push(alert);
         }
         
       } catch (alertError) {
-        console.error(`❌ Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
+        console.error(` Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
       }
     }
 
-    console.log(`📊 RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
+    console.log(` RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
 
     if (usersToNotify.length > 0) {
-      console.log(`📨 Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
+      console.log(`Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
       
       for (const userAlert of usersToNotify) {
         try {
@@ -962,7 +962,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
           
           if (result.success) {
             notificationsSent++;
-            console.log(`✅ Notification envoyée à ${userAlert.fullname}`);
+            console.log(` Notification envoyée à ${userAlert.fullname}`);
             
             await saveAlertNotificationToDatabase(
               userAlert.id_utilisateur, 
@@ -972,15 +972,15 @@ const notifyUsersWithMatchingAlerts = async (property) => {
             );
             
           } else {
-            console.log(`❌ Échec notification pour ${userAlert.fullname}:`, result.message);
+            console.log(` Échec notification pour ${userAlert.fullname}:`, result.message);
           }
           
         } catch (userError) {
-          console.error(`❌ Erreur notification utilisateur:`, userError.message);
+          console.error(` Erreur notification utilisateur:`, userError.message);
         }
       }
     } else {
-      console.log('ℹ️ Aucun utilisateur à notifier');
+      console.log(' Aucun utilisateur à notifier');
     }
 
     return {
@@ -991,7 +991,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification alertes:', error);
+    console.error(' ERREUR notification alertes:', error);
     
     return {
       success: false,
@@ -1008,8 +1008,8 @@ const notifyUsersWithMatchingAlerts = async (property) => {
  */
 const notifyAllUsersAboutNewProperty = async (property) => {
   try {
-    console.log('🚀 NOTIFICATION NOUVELLE PROPRIÉTÉ');
-    console.log('📝 Propriété:', {
+    console.log(' NOTIFICATION NOUVELLE PROPRIÉTÉ');
+    console.log(' Propriété:', {
       id: property.id_propriete,
       titre: property.titre,
       prix: property.prix,
@@ -1045,11 +1045,11 @@ const notifyAllUsersAboutNewProperty = async (property) => {
       total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    // console.log('🎉 NOTIFICATION COMPLÈTE TERMINÉE:', result);
+    // console.log(' NOTIFICATION COMPLÈTE TERMINÉE:', result);
     return result;
 
   } catch (error) {
-    console.error('❌ ERREUR NOTIFICATION:', error);
+    console.error(' ERREUR NOTIFICATION:', error);
     
     return {
       success: false,
@@ -1066,7 +1066,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
  */
 const getReservationDetails = async (id_reservation) => {
   try {
-    console.log('🔍 Récupération détails réservation ID:', id_reservation);
+    console.log(' Récupération détails réservation ID:', id_reservation);
     
     const query = `
       SELECT 
@@ -1103,20 +1103,20 @@ const getReservationDetails = async (id_reservation) => {
     const [reservations] = await pool.execute(query, [id_reservation]);
 
     if (reservations.length === 0) {
-      console.log('⚠️ Aucune réservation trouvée');
+      console.log(' Aucune réservation trouvée');
       return null;
     } 
 
     const reservation = reservations[0];
     
-    console.log('🔑 Tokens trouvés:', {
+    console.log('Tokens trouvés:', {
       visiteur_token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
       proprietaire_token: reservation.proprietaire_token ? 'PRÉSENT' : 'ABSENT'
     }); 
 
     return reservation;
   } catch (error) {
-    console.error('❌ Erreur récupération détails réservation:', error);
+    console.error('Erreur récupération détails réservation:', error);
     return null;
   }
 };
@@ -1126,11 +1126,11 @@ const getReservationDetails = async (id_reservation) => {
  */
 const notifyOwnerNewReservation = async (reservation) => {
   try {
-    console.log('📅 Notification nouvelle réservation au propriétaire');
+    console.log('Notification nouvelle réservation au propriétaire');
     
     // Vérifier si visiteur = propriétaire
     if (reservation.id_utilisateur === reservation.id_proprietaire) {
-      console.log('ℹ️ Visiteur est propriétaire, notification annulée');
+      console.log('ℹVisiteur est propriétaire, notification annulée');
       return { 
         success: true, 
         skipped: true, 
@@ -1140,7 +1140,7 @@ const notifyOwnerNewReservation = async (reservation) => {
 
     const reservationDetails = await getReservationDetails(reservation.id_reservation);
     if (!reservationDetails) {
-      console.log('❌ Détails réservation non trouvés');
+      console.log('Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
@@ -1148,12 +1148,12 @@ const notifyOwnerNewReservation = async (reservation) => {
     const visiteur_nom = reservationDetails.visiteur_nom || 'Un visiteur';
 
     if (!proprietaire_token || !Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`❌ Token propriétaire invalide pour ${proprietaire_nom}`);
+      console.log(`Token propriétaire invalide pour ${proprietaire_nom}`);
       return { success: false, error: 'Token propriétaire invalide' };
     }
 
     const formattedDate = formatDateForDisplay(date_visite);
-    const title = "📅 Nouvelle demande de visite";
+    const title = "Nouvelle demande de visite";
     const body = `${visiteur_nom} souhaite visiter "${propriete_titre}" le ${formattedDate} à ${heure_visite}`;
     
     const data = {
@@ -1175,18 +1175,18 @@ const notifyOwnerNewReservation = async (reservation) => {
       'reservation'
     );
 
-    console.log(`✅ Notification envoyée au propriétaire ${proprietaire_nom}`);
+    console.log(` Notification envoyée au propriétaire ${proprietaire_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification propriétaire:', error);
+    console.error(' Erreur notification propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
 
 const notifyVisitorReservationRequest = async (reservation) => {
   try {
-    console.log('✅ Notification confirmation demande au visiteur:', reservation);
+    console.log(' Notification confirmation demande au visiteur:', reservation);
     
     // Si reservation est un objet, extraire l'ID
     const reservationId = reservation.id_reservation || reservation;
@@ -1194,18 +1194,18 @@ const notifyVisitorReservationRequest = async (reservation) => {
     const reservationDetails = await getReservationDetails(reservationId);
     
     if (!reservationDetails) {
-      console.log('❌ Détails réservation non trouvés');
+      console.log('Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(`Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const title = "✅ Demande envoyée !";
+    const title = " Demande envoyée !";
     const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
     
     const data = {
@@ -1227,11 +1227,11 @@ const notifyVisitorReservationRequest = async (reservation) => {
       'reservation_request_sent'
     );
 
-    console.log(`✅ Notification envoyée au visiteur ${visiteur_nom}`);
+    console.log(` Notification envoyée au visiteur ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification visiteur:', error);
+    console.error('Erreur notification visiteur:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1253,12 +1253,12 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       reservationDetails = reservation;
       reservationId = reservationDetails.id_reservation;
     } else {
-      console.error('❌ Format de réservation invalide');
+      console.error(' Format de réservation invalide');
       return { success: false, error: 'Format de réservation invalide' };
     }
 
     if (!reservationDetails) {
-      console.log('❌ Détails réservation non trouvés');
+      console.log('Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
@@ -1283,48 +1283,48 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     const statusMessages = {
       'confirme': {
         owner: {
-          title: "✅ Visite confirmée",
+          title: " Visite confirmée",
           body: `La visite de ${visiteur_nom} pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         },
         visitor: {
-          title: "🎉 Visite confirmée !",
+          title: "Visite confirmée !",
           body: `Votre visite pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         }
       },
       'annule': {
         owner: {
-          title: "❌ Visite annulée",
+          title: "Visite annulée",
           body: `La visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)} a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         },
         visitor: {
-          title: "❌ Visite annulée",
+          title: "Visite annulée",
           body: `Votre visite pour "${propriete_titre}" a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         }
       },
       'termine': {
         owner: {
-          title: "🏁 Visite terminée",
+          title: "Visite terminée",
           body: `La visite pour "${propriete_titre}" s'est terminée le ${formatDateForDisplay(date_visite)}.`,
           type: 'reservation_completed'
         },
         visitor: {
-          title: "🏁 Visite terminée",
+          title: "Visite terminée",
           body: `Merci d'avoir visité "${propriete_titre}" ! N'hésitez pas à laisser un avis.`,
           type: 'reservation_completed'
         }
       },
       'refuse': {
         owner: {
-          title: "🚫 Visite refusée",
+          title: "Visite refusée",
           body: `Vous avez refusé la visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)}. ${message || ''}`,
           type: 'reservation_refused'
         },
         visitor: {
-          title: "🚫 Visite refusée",
+          title: "Visite refusée",
           body: `Votre demande de visite pour "${propriete_titre}" a été refusée. ${message || 'Le propriétaire a refusé votre demande.'}`,
           type: 'reservation_refused'
         }
@@ -1333,7 +1333,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
     const messages = statusMessages[newStatus];
     if (!messages) {
-      console.log(`❌ Statut non géré: ${newStatus}`);
+      console.log(`Statut non géré: ${newStatus}`);
       return { success: false, error: 'Statut non géré' };
     }
 
@@ -1342,7 +1342,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
     // 1. Notification au PROPRIÉTAIRE
     if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`📤 Notification au propriétaire ${proprietaire_nom}...`);
+      console.log(`Notification au propriétaire ${proprietaire_nom}...`);
       
       const ownerData = {
         type: 'RESERVATION_STATUS_CHANGE',
@@ -1376,7 +1376,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
     // 2. Notification au VISITEUR
     if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`📤 Notification au visiteur ${visiteur_nom}...`);
+      console.log(` Notification au visiteur ${visiteur_nom}...`);
       
       const visitorData = {
         type: 'RESERVATION_STATUS_CHANGE',
@@ -1408,7 +1408,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       if (visitorResult.success) sentNotifications.push('visitor');
     }
 
-    console.log(`✅ ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
+    console.log(` ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
     console.log('=== FIN NOTIFICATION ===');
 
     return {
@@ -1421,7 +1421,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification changement statut:', error);
+    console.error(' ERREUR notification changement statut:', error);
     
     return {
       success: false,
@@ -1439,14 +1439,14 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('❌ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, proprietaire_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
@@ -1472,11 +1472,11 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       'owner_message'
     );
 
-    console.log(`✅ Message propriétaire envoyé à ${visiteur_nom}`);
+    console.log(` Message propriétaire envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification message propriétaire:', error);
+    console.error(' Erreur notification message propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1490,14 +1490,14 @@ const notifyVisitReminder = async (reservationId) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('❌ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, propriete_titre, heure_visite } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`❌ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
@@ -1522,11 +1522,11 @@ const notifyVisitReminder = async (reservationId) => {
       'visit_reminder'
     );
 
-    console.log(`✅ Rappel visite envoyé à ${visiteur_nom}`);
+    console.log(` Rappel visite envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification rappel visite:', error);
+    console.error(' Erreur notification rappel visite:', error);
     return { success: false, error: error.message };
   }
 };
