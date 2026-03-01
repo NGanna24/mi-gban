@@ -2557,10 +2557,7 @@ async getProprietesAccueil(req, res) {
         
         // Fallback aux propriétés populaires
         try {
-          proprietes = await Propriete.getPopulaires(parseInt(limit));
-          typeContenu = 'populaires_fallback';
-          metadata.fallbackUtilise = true;
-          metadata.raisonFallback = 'erreur_preferences';
+
         } catch (popError) {
           console.error('❌ Erreur fallback populaires:', popError);
           proprietes = await Propriete.findAll(parseInt(limit), 0, {});
@@ -2571,8 +2568,8 @@ async getProprietesAccueil(req, res) {
     } else {
       // Visiteur non connecté - propriétés populaires
       try {
-        proprietes = await Propriete.getPopulaires(parseInt(limit));
-        typeContenu = 'populaires';
+        // proprietes = await Propriete.getPopulaires(parseInt(limit));
+        // typeContenu = 'populaires';
       } catch (error) {
         console.error('❌ Erreur chargement populaires:', error);
         proprietes = await Propriete.findAll(parseInt(limit), 0, {});
