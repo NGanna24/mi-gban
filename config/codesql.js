@@ -742,9 +742,9 @@ CREATE TABLE IF NOT EXISTS Reservation (
     heure_visite TIME NOT NULL, 
     nombre_personnes INT DEFAULT 1,
     notes TEXT,
-    telephone_visiteur VARCHAR(20), -- ✅ NOUVEAU : téléphone pour contact direct
+    telephone_visiteur VARCHAR(20), --  NOUVEAU : téléphone pour contact direct
     message_agent TEXT,
-    statut ENUM('confirme', 'annule', 'termine', 'refuse', 'attente') DEFAULT 'attente', -- ✅ SIMPLIFIÉ : plus d'attente paiement
+    statut ENUM('confirme', 'annule', 'termine', 'refuse', 'attente') DEFAULT 'attente', -- SIMPLIFIÉ : plus d'attente paiement
     date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
     date_modification DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     

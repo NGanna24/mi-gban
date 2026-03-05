@@ -9,7 +9,7 @@ router.post('/', PreferenceUtilisateurController.createOrUpdate);
 router.get('/my-preferences', PreferenceUtilisateurController.getMyPreferences); 
 router.put('/', PreferenceUtilisateurController.update);
 router.delete('/', PreferenceUtilisateurController.delete);
-router.get('/PreferenceUtilisateur/onboarding-status', PreferenceUtilisateurController.checkOnboardingStatus);
+router.get('/onboarding-status', PreferenceUtilisateurController.checkOnboardingStatus);
 router.get('/recommandations', PreferenceUtilisateurController.getRecommandations);
 
 

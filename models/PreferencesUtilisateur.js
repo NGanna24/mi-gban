@@ -1,6 +1,6 @@
 import { pool } from '../config/db.js';
 
-class PreferenceUtilisateur {
+class PreferenceUtilisateur { 
   
   // Créer ou mettre à jour les préférences utilisateur
   static async createOrUpdate(preferenceData) {

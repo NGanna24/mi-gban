@@ -159,7 +159,7 @@ class PreferenceUtilisateurController {
   }
 
   // Vérifier si l'onboarding est complété
-  static async checkOnboardingStatus(req, res) {
+  static async checkOnboardingStatus(req, res) { 
     try {
       const { id_utilisateur } = req.user;
 

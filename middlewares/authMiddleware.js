@@ -5,7 +5,7 @@ export const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
-  // console.log('🔐 Middleware auth - Header:', authHeader);
+  // console.log('🔐 Middleware auth - Header:', authHeader); 
   // console.log('🔐 Token reçu:', token ? 'Présent' : 'Absent');
 
   if (!token) { 
