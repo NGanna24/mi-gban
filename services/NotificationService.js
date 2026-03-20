@@ -1061,9 +1061,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
   }
 };
 
-/**
- * Récupère les détails d'une réservation
- */
+// // NOTIFICATION SERVICE - FONCTION getReservationDetails CORRIGÉE
 const getReservationDetails = async (id_reservation) => {
   try {
     console.log(' Récupération détails réservation ID:', id_reservation);
@@ -1078,25 +1076,24 @@ const getReservationDetails = async (id_reservation) => {
         p.type_transaction,
         p.id_utilisateur AS id_proprietaire,
         
+        -- Informations du visiteur
         u.fullname AS visiteur_nom,
-        prof_u.email AS visiteur_email,
         u.telephone AS visiteur_telephone,
-        u.expo_push_token AS visiteur_token,
+        u.expo_push_token,  -- ← PAS D'ALIAS, on garde le nom original
+        u.id_utilisateur,
         
+        -- Informations du propriétaire
         prop_u.fullname AS proprietaire_nom,
-        prof_prop.email AS proprietaire_email,
         prop_u.telephone AS proprietaire_telephone,
-        prop_u.expo_push_token AS proprietaire_token
+        prop_u.expo_push_token AS proprietaire_token,  -- ← Alias pour le propriétaire
+        
+        -- Pour récupérer aussi le token du propriétaire sous un autre nom
+        prop_u.expo_push_token AS prop_token
         
       FROM Reservation r
       JOIN Propriete p ON r.id_propriete = p.id_propriete
-      
       JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
-      LEFT JOIN Profile prof_u ON u.id_utilisateur = prof_u.id_utilisateur
-      
       JOIN Utilisateur prop_u ON p.id_utilisateur = prop_u.id_utilisateur
-      LEFT JOIN Profile prof_prop ON prop_u.id_utilisateur = prof_prop.id_utilisateur
-      
       WHERE r.id_reservation = ?    
     `;
     
@@ -1109,12 +1106,27 @@ const getReservationDetails = async (id_reservation) => {
 
     const reservation = reservations[0];
     
-    console.log('Tokens trouvés:', {
-      visiteur_token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
-      proprietaire_token: reservation.proprietaire_token ? 'PRÉSENT' : 'ABSENT'
-    }); 
+    // 👇 CORRECTION CRITIQUE: S'assurer que les tokens sont bien récupérés
+    // Le token du visiteur est dans "expo_push_token" (sans alias)
+    // Le token du propriétaire est dans "proprietaire_token" ou "prop_token"
+    
+    const visiteur_token = reservation.expo_push_token;  // ← Utilise le nom original
+    const proprietaire_token = reservation.proprietaire_token || reservation.prop_token;
+    
+    console.log('🔑 Tokens après correction:', {
+      visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT',
+      proprietaire_token: proprietaire_token ? 'PRÉSENT' : 'ABSENT',
+      raw_visiteur: reservation.expo_push_token ? reservation.expo_push_token.substring(0, 20) + '...' : null,
+      raw_proprietaire: proprietaire_token ? proprietaire_token.substring(0, 20) + '...' : null
+    });
 
-    return reservation;
+    // Ajouter les tokens à l'objet retourné
+    return {
+      ...reservation,
+      visiteur_token: visiteur_token,
+      proprietaire_token: proprietaire_token
+    };
+
   } catch (error) {
     console.error('Erreur récupération détails réservation:', error);
     return null;
@@ -1130,7 +1142,7 @@ const notifyOwnerNewReservation = async (reservation) => {
     
     // Vérifier si visiteur = propriétaire
     if (reservation.id_utilisateur === reservation.id_proprietaire) {
-      console.log('ℹVisiteur est propriétaire, notification annulée');
+      console.log('Visiteur est propriétaire, notification annulée');
       return { 
         success: true, 
         skipped: true, 
@@ -1162,8 +1174,9 @@ const notifyOwnerNewReservation = async (reservation) => {
       propertyId: reservation.id_propriete,
       status: reservation.statut,
       action: 'view_reservation',
-      screen: 'reservation-details',
-      timestamp: new Date().toISOString()
+      screen: '',
+      timestamp: new Date().toISOString(),
+      role: 'owner' 
     };
 
     const result = await sendPushNotification(
@@ -1215,7 +1228,8 @@ const notifyVisitorReservationRequest = async (reservation) => {
       status: reservationDetails.statut,
       action: 'view_reservation',
       screen: 'reservation-details',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      role: 'visitor' 
     };
 
     const result = await sendPushNotification(
@@ -1340,39 +1354,61 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     const results = [];
     const sentNotifications = [];
 
-    // 1. Notification au PROPRIÉTAIRE
-    if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`Notification au propriétaire ${proprietaire_nom}...`);
-      
-      const ownerData = {
-        type: 'RESERVATION_STATUS_CHANGE',
-        reservationId: reservationId,
-        propertyId: reservationDetails.id_propriete,
-        oldStatus: oldStatus,
-        newStatus: newStatus,
-        action: 'view_reservation',
-        screen: 'reservation-details',
-        timestamp: new Date().toISOString(),
-        role: 'owner'
-      };
+// Dans notifyReservationStatusChange, MODIFIEZ ownerData et visitorData :
 
-      const ownerResult = await sendPushNotification(
-        proprietaire_token,
-        messages.owner.title,
-        messages.owner.body,
-        ownerData,
-        id_proprietaire,
-        messages.owner.type
-      );
+// 1. Notification au PROPRIÉTAIRE
+if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
+  console.log(`Notification au propriétaire ${proprietaire_nom}...`);
+  
+  const ownerData = {
+    type: 'RESERVATION_STATUS_CHANGE',
+    reservationId: reservationId,
+    propertyId: reservationDetails.id_propriete,
+    oldStatus: oldStatus,
+    newStatus: newStatus,
+    action: 'view_reservation', 
+    screen: 'reservation-details',
+    timestamp: new Date().toISOString(),
+    role: 'owner', // 👈 C'est BIEN présent ici
+  };
 
-      results.push({
-        to: 'owner',
-        success: ownerResult.success,
-        name: proprietaire_nom
-      });
+  const ownerResult = await sendPushNotification(
+    proprietaire_token,
+    messages.owner.title,
+    messages.owner.body,
+    ownerData, // 👈 On passe ownerData avec le rôle
+    id_proprietaire,
+    messages.owner.type
+  );
+  // ...
+}
 
-      if (ownerResult.success) sentNotifications.push('owner');
-    }
+// 2. Notification au VISITEUR
+if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
+  console.log(` Notification au visiteur ${visiteur_nom}...`);
+  
+  const visitorData = {
+    type: 'RESERVATION_STATUS_CHANGE',
+    reservationId: reservationId,
+    propertyId: reservationDetails.id_propriete,
+    oldStatus: oldStatus,
+    newStatus: newStatus,
+    action: 'view_reservation',
+    screen: 'reservation-details',
+    timestamp: new Date().toISOString(),
+    role: 'visitor', 
+  };
+
+  const visitorResult = await sendPushNotification(
+    visiteur_token,
+    messages.visitor.title,
+    messages.visitor.body,
+    visitorData, // 👈 On passe visitorData avec le rôle
+    id_utilisateur,
+    messages.visitor.type
+  );
+  // ...
+}
 
     // 2. Notification au VISITEUR
     if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
@@ -1427,7 +1463,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       success: false,
       error: error.message
     };
-  }
+  }  
 };
 
 /**
@@ -1460,7 +1496,8 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       propertyId: reservationDetails.id_propriete,
       action: 'view_reservation',
       screen: 'reservation-details',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      role: 'visitor'
     };
 
     const result = await sendPushNotification(
@@ -1510,7 +1547,8 @@ const notifyVisitReminder = async (reservationId) => {
       propertyId: reservationDetails.id_propriete,
       action: 'view_reservation',
       screen: 'reservation-details',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      role: 'visitor'
     };
 
     const result = await sendPushNotification(

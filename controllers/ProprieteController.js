@@ -2566,7 +2566,7 @@ async getProprietesAccueil(req, res) {
         }
       }
     } else {
-      // Visiteur non connecté - propriétés populaires
+      // Visiteur non connecté - propriétés populaires 
       try {
         // proprietes = await Propriete.getPopulaires(parseInt(limit));
         // typeContenu = 'populaires';

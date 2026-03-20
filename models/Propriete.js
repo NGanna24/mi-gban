@@ -379,86 +379,86 @@ class Propriete {
     return valeur;
   }
 
-  // 🏠 READ - Récupérer toutes les propriétés avec media principal
-  static async findAll(limit = 50, offset = 0, filters = {}) {
-    try {
-      let query = `
-        SELECT p.*, 
-                m.url as media_principal,  
-                m.type as media_type,
-                sp.nombre_vues,
-                sp.nombre_likes,
-                sp.nombre_commentaires,
-                sp.nombre_partages,
-                sp.note_moyenne
-         FROM Propriete p
-         LEFT JOIN Media m ON p.id_propriete = m.id_propriete AND m.est_principale = true
-         LEFT JOIN StatistiquesPropriete sp ON p.id_propriete = sp.id_propriete
-         WHERE 1=1
-      `;
-      
-      const values = [];
+// 🏠 READ - Récupérer toutes les propriétés avec media principal
+static async findAll(limit = 50, offset = 0, filters = {}) {
+  try {
+    let query = `
+      SELECT p.*, 
+              m.url as media_principal,  
+              m.type as media_type,
+              sp.nombre_vues,
+              sp.nombre_likes,
+              sp.nombre_commentaires,
+              sp.nombre_partages,
+              sp.note_moyenne
+       FROM Propriete p
+       LEFT JOIN Media m ON p.id_propriete = m.id_propriete AND m.est_principale = true
+       LEFT JOIN StatistiquesPropriete sp ON p.id_propriete = sp.id_propriete
+       WHERE p.statut IN ('disponible', 'reserve')  
+    `;
+    
+    const values = [];
 
-      // ✅ FILTRES PAR TYPE DE TRANSACTION
-      if (filters.type_transaction) {
-        query += ' AND p.type_transaction = ?';
-        values.push(filters.type_transaction);
-      }
-
-      // FILTRES PAR TYPE DE PROPRIÉTÉ
-      if (filters.type_propriete) {
-        query += ' AND p.type_propriete = ?';
-        values.push(filters.type_propriete);
-      }
-
-      // FILTRES PAR VILLE
-      if (filters.ville) {
-        query += ' AND p.ville LIKE ?';
-        values.push(`%${filters.ville}%`);
-      }
-
-      // ✅ FILTRES PAR PRIX
-      if (filters.minPrice) {
-        query += ' AND p.prix >= ?';
-        values.push(filters.minPrice);
-      }
-
-      if (filters.maxPrice) {
-        query += ' AND p.prix <= ?';
-        values.push(filters.maxPrice);
-      }
-
-      // TRI
-      if (filters.sortBy === 'popularite') {
-        query += ' ORDER BY sp.nombre_vues DESC, sp.nombre_likes DESC';
-      } else if (filters.sortBy === 'prix_croissant') {
-        query += ' ORDER BY p.prix ASC';
-      } else if (filters.sortBy === 'prix_decroissant') {
-        query += ' ORDER BY p.prix DESC';
-      } else {
-        query += ' ORDER BY p.date_creation DESC';
-      }
-
-      query += ' LIMIT ? OFFSET ?';
-      values.push(limit, offset);
-
-      const [rows] = await pool.query(query, values);
-
-      // ✅ UTILISATION DE LA MÉTHODE DE FORMATAGE UNIFIÉE
-      const proprietesAvecCaracteristiques = [];
-      
-      for (const row of rows) {
-        const proprieteFormatee = await this.#formatProprieteAvecMedias(row);
-        proprietesAvecCaracteristiques.push(proprieteFormatee);
-      }
-
-      return proprietesAvecCaracteristiques;
-
-    } catch (error) {
-      console.error('Erreur lors de la récupération des propriétés :', error);
-      throw error;
+    // ✅ FILTRES PAR TYPE DE TRANSACTION
+    if (filters.type_transaction) {
+      query += ' AND p.type_transaction = ?';
+      values.push(filters.type_transaction);
     }
+
+    // FILTRES PAR TYPE DE PROPRIÉTÉ
+    if (filters.type_propriete) {
+      query += ' AND p.type_propriete = ?';
+      values.push(filters.type_propriete);
+    }
+
+    // FILTRES PAR VILLE
+    if (filters.ville) {
+      query += ' AND p.ville LIKE ?';
+      values.push(`%${filters.ville}%`);
+    }
+
+    // ✅ FILTRES PAR PRIX
+    if (filters.minPrice) {
+      query += ' AND p.prix >= ?';
+      values.push(filters.minPrice);
+    }
+
+    if (filters.maxPrice) {
+      query += ' AND p.prix <= ?';
+      values.push(filters.maxPrice);
+    }
+
+    // TRI
+    if (filters.sortBy === 'popularite') {
+      query += ' ORDER BY sp.nombre_vues DESC, sp.nombre_likes DESC';
+    } else if (filters.sortBy === 'prix_croissant') {
+      query += ' ORDER BY p.prix ASC';
+    } else if (filters.sortBy === 'prix_decroissant') {
+      query += ' ORDER BY p.prix DESC';
+    } else {
+      query += ' ORDER BY p.date_creation DESC';
+    }
+
+    query += ' LIMIT ? OFFSET ?';
+    values.push(limit, offset);
+
+    const [rows] = await pool.query(query, values);
+
+    // ✅ UTILISATION DE LA MÉTHODE DE FORMATAGE UNIFIÉE
+    const proprietesAvecCaracteristiques = [];
+    
+    for (const row of rows) {
+      const proprieteFormatee = await this.#formatProprieteAvecMedias(row);
+      proprietesAvecCaracteristiques.push(proprieteFormatee);
+    }
+
+    return proprietesAvecCaracteristiques;
+
+  } catch (error) {
+    console.error('Erreur lors de la récupération des propriétés :', error);
+    throw error;
   }
+}
 // 🏠 READ - Récupérer les propriétés d'une agence spécifique
 static async findAllProprietesEnFonctionDeAgence(id_utilisateur, limit = 50, offset = 0, filters = {}) {
   try {
@@ -1611,7 +1611,7 @@ static async searchByCriteria(criteria, id_utilisateur = null, limit = 20, offse
 static async updatePropertyStatus(id_propriete, newStatus) {
   const connection = await pool.getConnection();
   
-  try {
+  try { 
     // Vérifier que le statut est valide
     const validStatuses = ['disponible', 'vendu', 'loué', 'indisponible', 'en_negociation', 'reserve'];
     if (!validStatuses.includes(newStatus)) {

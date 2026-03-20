@@ -193,6 +193,7 @@ static async create(req, res) {
 
   // ✅ Récupérer une réservation par ID
   static async getReservationById(req, res) {
+    console.log('🔍 Récupération réservation ID:', req.params.id_reservation);
     try {
       const { id_reservation } = req.params;
       const reservation = await Reservation.findById(id_reservation);
@@ -346,7 +347,7 @@ static async updateStatus(req, res) {
     const { statut, message_agent } = req.body;
 
     console.log('=== DÉBUT MISE À JOUR STATUT ===');
-    console.log('📌 ID Réservation:', id_reservation);
+    console.log('📌 ID Réservation:', id_reservation); 
     console.log('📌 Nouveau statut demandé:', statut);
     console.log('📌 Message agent:', message_agent);
 

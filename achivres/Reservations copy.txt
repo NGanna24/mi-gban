@@ -1,6 +1,6 @@
-// models/Reservations.js
 import { pool } from '../config/db.js';
 import { notifyOwnerNewReservation, notifyVisitorReservationRequest } from '../services/NotificationService.js';
+
 
 class Reservation {
   constructor(reservation) {
@@ -26,168 +26,115 @@ class Reservation {
     this.utilisateur_telephone = reservation.utilisateur_telephone;
     this.proprietaire_nom = reservation.proprietaire_nom;
     this.proprietaire_telephone = reservation.proprietaire_telephone;
-    
-    // ✅ NOUVEAU: Champs pour les médias (images et vidéos)
-    this.media = reservation.media || []; // Tableau de médias (images et vidéos)
-    this.media_principal = reservation.media_principal || null; // Média principal
-
-      // ✅ AJOUTER CES CHAMPS POUR LES TOKENS
-  this.utilisateur_token = reservation.utilisateur_token;
-  this.proprietaire_token = reservation.proprietaire_token;
-  this.visiteur_token = reservation.visiteur_token;  // alias
-  this.expo_push_token_visiteur = reservation.utilisateur_token; // autre alias
-  this.expo_push_token_proprietaire = reservation.proprietaire_token; // autre alias
   }
 
-  // Dans Reservations.js - Modifiez la méthode create() :
-  static async create(reservationData) {
-    const connection = await pool.getConnection();
-    
-    try {
-      await connection.beginTransaction();
-
-      const {
-        id_utilisateur,
-        id_propriete,
-        date_visite, 
-        heure_visite,
-        nombre_personnes = 1,
-        notes = '',
-        telephone_visiteur = ''
-      } = reservationData;
-
-      // 1. Vérifier si le créneau est disponible
-      const isAvailable = await this.checkAvailability(id_propriete, date_visite, heure_visite);
-      if (!isAvailable) {
-        throw new Error('Ce créneau est déjà réservé');
-      }
-
-      // 2. Vérifier que la propriété existe et est disponible
-      const [proprieteRows] = await connection.execute(
-        `SELECT p.statut, p.id_utilisateur as id_proprietaire, p.titre as propriete_titre 
-         FROM Propriete p WHERE p.id_propriete = ?`,
-        [id_propriete]
-      );
-
-      if (proprieteRows.length === 0) {
-        throw new Error('Propriété non trouvée');
-      }
-
-      const propriete = proprieteRows[0];
-      if (propriete.statut !== 'disponible') {
-        throw new Error('Cette propriété n\'est plus disponible pour réservation');
-      }
-
-      // 3. Créer la réservation
-      const [result] = await connection.execute(
-        `INSERT INTO Reservation 
-         (id_utilisateur, id_propriete, date_visite, heure_visite, 
-          nombre_personnes, notes, telephone_visiteur, statut) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'attente')`,
-        [id_utilisateur, id_propriete, date_visite, heure_visite, 
-         nombre_personnes, notes, telephone_visiteur]
-      );
-
-      const reservationId = result.insertId;
-
-      // 4. Mettre à jour le statut de la propriété
-      await connection.execute(
-        'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
-        ['reserve', id_propriete]
-      );
-
-      await connection.commit();
-      
-      console.log('✅ Réservation créée avec succès:', reservationId);
-      
-      // 5. RETOURNER L'ID SEULEMENT - LES NOTIFICATIONS SERONT FAITES DANS LE CONTROLLEUR
-      return reservationId;
-
-    } catch (error) {
-      await connection.rollback();
-      console.error('❌ Erreur création réservation:', error);
-      throw error;
-    } finally {
-      connection.release();
-    }
-  }
-
-// ✅ Récupérer une réservation par ID avec toutes les infos ET LES TOKENS
-static async findById(id_reservation) {
+// Dans Reservations.js - Modifiez la méthode create() :
+static async create(reservationData) {
+  const connection = await pool.getConnection();
+  
   try {
-    // Récupérer la réservation avec les infos de base ET LES TOKENS
-    const [rows] = await pool.execute(
-      `SELECT r.*, 
-              p.titre as propriete_titre,
-              p.quartier,
-              p.ville,
-              p.prix as prix_location,
-              p.statut as propriete_statut,
-              u.fullname as utilisateur_nom,
-              u.telephone as utilisateur_telephone,
-              u.expo_push_token as utilisateur_token,
-              prop_u.fullname as proprietaire_nom,
-              prop_u.telephone as proprietaire_telephone,
-              prop_u.expo_push_token as proprietaire_token
-       FROM Reservation r
-       JOIN Propriete p ON r.id_propriete = p.id_propriete
-       JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
-       JOIN Utilisateur prop_u ON p.id_utilisateur = prop_u.id_utilisateur
-       WHERE r.id_reservation = ?`,
-      [id_reservation]
-    );
+    await connection.beginTransaction();
 
-    if (rows.length === 0) {
-      return null;
+    const {
+      id_utilisateur,
+      id_propriete,
+      date_visite, 
+      heure_visite,
+      nombre_personnes = 1,
+      notes = '',
+      telephone_visiteur = ''
+    } = reservationData;
+
+    // 1. Vérifier si le créneau est disponible
+    const isAvailable = await this.checkAvailability(id_propriete, date_visite, heure_visite);
+    if (!isAvailable) {
+      throw new Error('Ce créneau est déjà réservé');
     }
 
-    const reservationData = rows[0];
-    
-    // ✅ Récupérer les médias de la propriété
-    const [mediaRows] = await pool.execute(
-      `SELECT id_media, url, type, ordre_affichage as ordre, est_principale,
-              duree_video, fichier_taille
-       FROM Media 
-       WHERE id_propriete = ? 
-       ORDER BY est_principale DESC, ordre_affichage ASC, date_ajout DESC`,
-      [reservationData.id_propriete]
+    // 2. Vérifier que la propriété existe et est disponible
+    const [proprieteRows] = await connection.execute(
+      `SELECT p.statut, p.id_utilisateur as id_proprietaire, p.titre as propriete_titre 
+       FROM Propriete p WHERE p.id_propriete = ?`,
+      [id_propriete]
     );
 
-    // Formatter les médias
-    reservationData.media = mediaRows.map(media => ({
-      id: media.id_media,
-      url: media.url,
-      type: media.type,
-      est_principale: media.est_principale === 1,
-      ordre: media.ordre,
-      duree: media.type === 'video' ? media.duree_video : undefined,
-      taille: media.fichier_taille
-    }));
+    if (proprieteRows.length === 0) {
+      throw new Error('Propriété non trouvée');
+    }
 
-    // Trouver le média principal
-    const mediaPrincipal = mediaRows.find(m => m.est_principale === 1) || mediaRows[0];
-    reservationData.media_principal = mediaPrincipal ? mediaPrincipal.url : null;
+    const propriete = proprieteRows[0];
+    if (propriete.statut !== 'disponible') {
+      throw new Error('Cette propriété n\'est plus disponible pour réservation');
+    }
 
-    // ✅ CRÉER UN NOUVEL OBJET AVEC TOUS LES CHAMPS NÉCESSAIRES
-    const reservation = new Reservation(reservationData);
-    
-    // ✅ AJOUTER EXPLICITEMENT LES TOKENS À L'OBJET
-    reservation.visiteur_token = reservationData.utilisateur_token;
-    reservation.proprietaire_token = reservationData.proprietaire_token;
-    
-    // ✅ AJOUTER AUSSI SOUS LES NOMS ATTENDUS PAR NOTIFICATIONSERVICE
-    reservation.expo_push_token_visiteur = reservationData.utilisateur_token;
-    reservation.expo_push_token_proprietaire = reservationData.proprietaire_token;
+    // 3. Créer la réservation
+    const [result] = await connection.execute(
+      `INSERT INTO Reservation 
+       (id_utilisateur, id_propriete, date_visite, heure_visite, 
+        nombre_personnes, notes, telephone_visiteur, statut) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'attente')`,
+      [id_utilisateur, id_propriete, date_visite, heure_visite, 
+       nombre_personnes, notes, telephone_visiteur]
+    );
 
-    return reservation;
+    const reservationId = result.insertId;
+
+    // 4. Mettre à jour le statut de la propriété
+    await connection.execute(
+      'UPDATE Propriete SET statut = ? WHERE id_propriete = ?',
+      ['reserve', id_propriete]
+    );
+
+    await connection.commit();
     
+    console.log('✅ Réservation créée avec succès:', reservationId);
+    
+    // 5. RETOURNER L'ID SEULEMENT - LES NOTIFICATIONS SERONT FAITES DANS LE CONTROLLEUR
+    return reservationId;
+
   } catch (error) {
-    console.error('❌ Erreur récupération réservation:', error);
+    await connection.rollback();
+    console.error('❌ Erreur création réservation:', error);
     throw error;
+  } finally {
+    connection.release();
   }
-}
+} 
 
-  // ✅ Récupérer toutes les réservations d'un utilisateur avec les médias
+  // ✅ Récupérer une réservation par ID avec toutes les infos
+  static async findById(id_reservation) {
+    try {
+      const [rows] = await pool.execute(
+        `SELECT r.*, 
+                p.titre as propriete_titre,
+                p.quartier,
+                p.ville,
+                p.prix as prix_location,
+                p.statut as propriete_statut,
+                u.fullname as utilisateur_nom,
+                u.telephone as utilisateur_telephone,
+                prop_u.fullname as proprietaire_nom,
+                prop_u.telephone as proprietaire_telephone
+         FROM Reservation r
+         JOIN Propriete p ON r.id_propriete = p.id_propriete
+         JOIN Utilisateur u ON r.id_utilisateur = u.id_utilisateur
+         JOIN Utilisateur prop_u ON p.id_utilisateur = prop_u.id_utilisateur
+         WHERE r.id_reservation = ?`,
+        [id_reservation]
+      );
+
+      if (rows.length === 0) {
+        return null;
+      }
+
+      return new Reservation(rows[0]);
+    } catch (error) {
+      console.error('❌ Erreur récupération réservation:', error);
+      throw error;
+    }
+  }
+ 
+  // ✅ Récupérer toutes les réservations d'un utilisateur
   static async findByUserId(id_utilisateur) {
     try {
       const [rows] = await pool.execute(
@@ -206,27 +153,7 @@ static async findById(id_reservation) {
         [id_utilisateur]
       );
 
-      const reservations = [];
-      
-      for (const row of rows) {
-        // ✅ Récupérer le média principal pour chaque propriété
-        const [mediaRows] = await pool.execute(
-          `SELECT url, type, est_principale
-           FROM Media 
-           WHERE id_propriete = ? 
-           ORDER BY est_principale DESC, ordre_affichage ASC 
-           LIMIT 1`,
-          [row.id_propriete]
-        );
-
-        row.media_principal = mediaRows.length > 0 ? mediaRows[0].url : null;
-        row.media_type_principal = mediaRows.length > 0 ? mediaRows[0].type : null;
-        
-        reservations.push(new Reservation(row));
-      }
-
-      return reservations;
-      
+      return rows.map(row => new Reservation(row));
     } catch (error) {
       console.error('❌ Erreur récupération réservations utilisateur:', error);
       throw error;
@@ -254,7 +181,7 @@ static async findById(id_reservation) {
     }
   }
 
-  // ✅ Récupérer les réservations d'un propriétaire avec les médias
+  // ✅ Récupérer les réservations d'un propriétaire
   static async findByOwnerId(id_proprietaire) {
     try {
       const [rows] = await pool.execute(
@@ -273,27 +200,7 @@ static async findById(id_reservation) {
         [id_proprietaire]
       );
 
-      const reservations = [];
-      
-      for (const row of rows) {
-        // ✅ Récupérer le média principal pour chaque propriété
-        const [mediaRows] = await pool.execute(
-          `SELECT url, type, est_principale
-           FROM Media 
-           WHERE id_propriete = ? 
-           ORDER BY est_principale DESC, ordre_affichage ASC 
-           LIMIT 1`,
-          [row.id_propriete]
-        );
-
-        row.media_principal = mediaRows.length > 0 ? mediaRows[0].url : null;
-        row.media_type_principal = mediaRows.length > 0 ? mediaRows[0].type : null;
-        
-        reservations.push(new Reservation(row));
-      }
-
-      return reservations;
-      
+      return rows.map(row => new Reservation(row));
     } catch (error) {
       console.error('❌ Erreur récupération réservations propriétaire:', error);
       throw error;
@@ -349,8 +256,6 @@ static async findById(id_reservation) {
     }
   }
 
-// models/Reservations.js - CORRECTION de la méthode updateStatus
-
 // ✅ Mettre à jour le statut d'une réservation
 static async updateStatus(id_reservation, statut, message_agent = null) {
   const connection = await pool.getConnection();
@@ -360,9 +265,9 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
 
     const statutsValides = ['confirme', 'annule', 'termine', 'refuse'];
     
-    if (!statutsValides.includes(statut)) { 
+    if (!statutsValides.includes(statut)) {
       throw new Error('Statut invalide');
-    } 
+    }
 
     // Récupérer la réservation pour avoir l'ID de la propriété
     const reservation = await this.findById(id_reservation);
@@ -370,14 +275,6 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
     if (!reservation) {
       throw new Error('Réservation non trouvée');
     }
-
-    // Récupérer le type de transaction de la propriété
-    const [proprieteRows] = await connection.execute(
-      `SELECT type_transaction FROM Propriete WHERE id_propriete = ?`,
-      [reservation.id_propriete]
-    );
-
-    const typeTransaction = proprieteRows[0]?.type_transaction || 'location';
 
     // Sauvegarder l'ancien statut AVANT mise à jour
     const ancienStatut = reservation.statut;
@@ -399,38 +296,22 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
       throw new Error('Réservation non trouvée');
     }
 
-    // ✅ LOGIQUE CORRECTE POUR LE STATUT DE LA PROPRIÉTÉ
-    let nouveauStatutPropriete;
+    // ✅ METTRE À JOUR LE STATUT DE LA PROPRIÉTÉ SELON LE STATUT DE LA RÉSERVATION
+    let nouveauStatutPropriete = 'disponible';
     
     switch(statut) {
       case 'confirme':
-        // Réservation confirmée → propriété réservée
         nouveauStatutPropriete = 'reserve';
         break;
-        
       case 'annule':
-      case 'refuse':
-        // Réservation annulée/refusée → propriété redevient disponible
         nouveauStatutPropriete = 'disponible';
         break;
-        
       case 'termine':
-        // ✅ VISITE TERMINÉE : La propriété change de statut selon le type de transaction
-        if (typeTransaction === 'vente') {
-          // Si c'était une vente, la propriété est maintenant vendue
-          nouveauStatutPropriete = 'vendu';
-          console.log('🏠 Propriété vendue après visite terminée');
-        } else {
-          // Si c'était une location, la propriété redevient disponible
-          // (on suppose que la visite n'aboutit pas forcément à une location)
-          // Ou on pourrait utiliser 'loué' si la visite aboutit à une location
-          nouveauStatutPropriete = 'disponible';
-          console.log('🏠 Propriété remise en disponible après visite de location');
-        }
+        nouveauStatutPropriete = 'disponible'; // Ou 'loué'/'vendu' selon le cas
         break;
-        
-      default:
+      case 'refuse':
         nouveauStatutPropriete = 'disponible';
+        break;
     }
 
     await connection.execute(
@@ -438,7 +319,7 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
       [nouveauStatutPropriete, reservation.id_propriete]
     );
 
-    console.log(`✅ Statut propriété mis à jour: ${nouveauStatutPropriete} (type: ${typeTransaction})`);
+    console.log(`✅ Statut propriété mis à jour: ${nouveauStatutPropriete}`);
 
     await connection.commit(); 
     
@@ -448,7 +329,6 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
     // Ajouter les anciens et nouveaux statuts pour les notifications
     updatedReservation.ancienStatut = ancienStatut;
     updatedReservation.nouveauStatut = statut;
-    updatedReservation.type_transaction = typeTransaction;
     
     console.log(`✅ Statut réservation mis à jour: ${ancienStatut} → ${statut}`);
     
@@ -586,7 +466,6 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
       statut: this.statut,
       date_creation: this.date_creation,
       date_modification: this.date_modification,
-      
       // Propriétés jointes
       propriete_titre: this.propriete_titre,
       quartier: this.quartier,
@@ -595,11 +474,7 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
       utilisateur_nom: this.utilisateur_nom,
       utilisateur_telephone: this.utilisateur_telephone,
       proprietaire_nom: this.proprietaire_nom,
-      proprietaire_telephone: this.proprietaire_telephone,
-      
-      // ✅ Médias
-      media: this.media,
-      media_principal: this.media_principal
+      proprietaire_telephone: this.proprietaire_telephone
     };
   }
 }
