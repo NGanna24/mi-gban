@@ -32,7 +32,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ==================== MIDDLEWARES GLOBAUX ====================
-
+// Vérifier que les variables sont chargées
+console.log('SMTP_USER:', process.env.SMTP_USER);
+console.log('SMTP_PASS:', process.env.SMTP_PASS ? 'Configuré' : 'MANQUANT');
 // Configuration CORS pour les requêtes cross-origin
 app.use(cors({
     origin: process.env.CORS_ORIGIN || '*',

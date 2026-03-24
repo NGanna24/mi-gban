@@ -4,14 +4,50 @@ const creation_tables = `
 -- =============================================================================
  
 -- Table des utilisateurs
+-- =============================================================================
+-- TABLE POUR LE SYSTÈME D'ALERTES
+-- =============================================================================
+ 
+-- Table des utilisateurs (CORRIGÉE)
 CREATE TABLE IF NOT EXISTS Utilisateur (
     id_utilisateur INT PRIMARY KEY AUTO_INCREMENT,  
     fullname VARCHAR(100) NOT NULL,
-    telephone VARCHAR(20), 
+    telephone VARCHAR(20) NOT NULL UNIQUE,  -- Ajout UNIQUE pour éviter doublons
+    password VARCHAR(255) NOT NULL,  -- CORRIGÉ: VARCHAR au lieu de INT
     role ENUM('client', 'agent', 'admin') DEFAULT 'client',
     date_inscription DATETIME DEFAULT CURRENT_TIMESTAMP,
     est_actif BOOLEAN DEFAULT TRUE,
-    expo_push_token VARCHAR(255) NULL 
+    expo_push_token VARCHAR(255) NULL,
+    
+    INDEX idx_telephone (telephone)
+);
+
+-- Table pour les codes de réinitialisation de mot de passe (inchangé)
+CREATE TABLE IF NOT EXISTS PasswordResetCodes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    telephone VARCHAR(20) NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    INDEX idx_telephone (telephone),
+    INDEX idx_code (code),
+    INDEX idx_expires_at (expires_at)
+);
+
+-- ... (le reste du script reste identique)
+
+-- Table pour les codes de réinitialisation de mot de passe (inchangé)
+CREATE TABLE IF NOT EXISTS PasswordResetCodes (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    telephone VARCHAR(20) NOT NULL,
+    code VARCHAR(6) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    INDEX idx_telephone (telephone),
+    INDEX idx_code (code),
+    INDEX idx_expires_at (expires_at)
 );
 
 CREATE TABLE IF NOT EXISTS Profile (

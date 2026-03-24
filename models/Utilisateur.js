@@ -1,83 +1,187 @@
 import { pool } from '../config/db.js';
-import Profile from './Profile.js'; // ✅ Import du modèle Profile
+import bcrypt from 'bcrypt';
+import Profile from './Profile.js';
 
-class User {  
-  static async create({ fullname, telephone, role = 'client' }) {
-  const connection = await pool.getConnection();
+class User {
   
-  try {  
-    await connection.beginTransaction();
-
-    console.log('📝 Tentative création utilisateur:', { fullname, telephone, role });
-    
-    // Vérifier d'abord si le téléphone existe déjà (avec la même connection)
-    const [existingRows] = await connection.execute(
-      'SELECT * FROM Utilisateur WHERE telephone = ?',
-      [telephone]
-    );
-    
-    if (existingRows.length > 0) {
-      throw new Error('Un utilisateur avec ce numéro de téléphone existe déjà');
-    }
-
-    // Créer l'utilisateur
-    const [result] = await connection.execute(
-      `INSERT INTO Utilisateur 
-       (fullname, telephone, role) 
-       VALUES (?, ?, ?)`,
-      [fullname, telephone, role] 
-    );
-
-    const userId = result.insertId;
-    console.log('✅ Utilisateur créé avec ID:', userId);
-
-    // ✅ CRÉATION AUTOMATIQUE DU PROFIL - AVEC LA MÊME CONNECTION
+  /**
+   * Hashage du mot de passe avec logs détaillés
+   */
+  static async hashPassword(password) {
     try {
-      console.log('👤 Création automatique du profil pour utilisateur:', userId);
+      const saltRounds = 10;
+      console.log('🔐 Hashage du mot de passe:', {
+        password: password,
+        type: typeof password,
+        length: password.length
+      });
       
-      const temporaryEmail = `user_${telephone}@temp.com`;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
       
-      // Utiliser la même connection transactionnelle
-      const [profileResult] = await connection.execute(
-        `INSERT INTO Profile 
-         (id_utilisateur, email, pays, preferences) 
-         VALUES (?, ?, ?, ?)`,
-        [
-          userId, 
-          temporaryEmail, 
-          'CI', 
-          JSON.stringify({
-            notifications: true,
-            newsletter: false,
-            langue: 'fr'
-          })
-        ]
+      console.log('✅ Hash généré avec succès:', {
+        hashLength: hashedPassword.length,
+        hashStart: hashedPassword.substring(0, 30) + '...',
+        hashEnd: hashedPassword.substring(hashedPassword.length - 10)
+      });
+      
+      return hashedPassword;
+    } catch (error) {
+      console.error('❌ Erreur hashage mot de passe:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Vérification du mot de passe avec logs ultra-détaillés
+   */
+  static async verifyPassword(plainPassword, hashedPassword) {
+    try {
+      console.log('🔐 ========== DÉBUT VÉRIFICATION ==========');
+      console.log('  - Mot de passe en clair reçu:', plainPassword);
+      console.log('  - Type du mot de passe:', typeof plainPassword);
+      console.log('  - Longueur du mot de passe:', plainPassword?.length);
+      console.log('  - Hash stocké présent:', !!hashedPassword);
+      
+      if (!hashedPassword) {
+        console.log('❌ Aucun hash stocké en base');
+        return false;
+      }
+      
+      console.log('  - Hash stocké complet:', hashedPassword);
+      console.log('  - Début du hash:', hashedPassword.substring(0, 30) + '...');
+      console.log('  - Fin du hash:', '...' + hashedPassword.substring(hashedPassword.length - 10));
+      
+      // Conversion explicite en string pour éviter tout problème de type
+      const passwordStr = String(plainPassword);
+      console.log('  - Mot de passe converti en string:', passwordStr);
+      console.log('  - Type après conversion:', typeof passwordStr);
+      console.log('  - Longueur après conversion:', passwordStr.length);
+      
+      // Vérification avec bcrypt
+      const isValid = await bcrypt.compare(passwordStr, hashedPassword);
+      console.log('  - Résultat bcrypt.compare:', isValid ? '✅ VALIDE' : '❌ INVALIDE');
+      console.log('🔐 ========== FIN VÉRIFICATION ==========');
+      
+      return isValid;
+    } catch (error) {
+      console.error('❌ Erreur bcrypt.compare:', error);
+      console.error('  - Stack trace:', error.stack);
+      return false;
+    }
+  }
+
+  /**
+   * Créer un utilisateur avec mot de passe (4 chiffres)
+   */
+  static async create({ fullname, telephone, password, role = 'client' }) {
+    const connection = await pool.getConnection();
+    
+    try {  
+      await connection.beginTransaction();
+
+      console.log('📝 ========== DÉBUT CRÉATION UTILISATEUR ==========');
+      console.log('  - fullname:', fullname);
+      console.log('  - telephone:', telephone);
+      console.log('  - password reçu:', password);
+      console.log('  - type password:', typeof password);
+      console.log('  - length password:', password?.length);
+      console.log('  - role:', role);
+      
+      // Validation du mot de passe (4 chiffres)
+      const passwordStr = String(password);
+      if (!/^\d{4}$/.test(passwordStr)) {
+        throw new Error(`Le mot de passe doit contenir exactement 4 chiffres. Reçu: "${passwordStr}" (${passwordStr.length} caractères)`);
+      }
+      
+      // Vérifier si le téléphone existe déjà
+      const [existingRows] = await connection.execute(
+        'SELECT * FROM Utilisateur WHERE telephone = ?',
+        [telephone]
       );
       
-      console.log('✅ Profil créé automatiquement, ID:', profileResult.insertId);
+      if (existingRows.length > 0) {
+        throw new Error('Un utilisateur avec ce numéro de téléphone existe déjà');
+      }
+
+      // Hash du mot de passe
+      const hashedPassword = await this.hashPassword(passwordStr);
+      console.log('  - Hash généré:', hashedPassword);
+
+      // Créer l'utilisateur
+      const [result] = await connection.execute(
+        `INSERT INTO Utilisateur 
+         (fullname, telephone, password, role) 
+         VALUES (?, ?, ?, ?)`,
+        [fullname, telephone, hashedPassword, role] 
+      );
+
+      const userId = result.insertId;
+      console.log('✅ Utilisateur créé avec ID:', userId);
+
+      // VÉRIFICATION POST-CRÉATION CRUCIALE
+      console.log('🔍 Vérification post-création...');
+      const [checkUser] = await connection.execute(
+        'SELECT password FROM Utilisateur WHERE id_utilisateur = ?',
+        [userId]
+      );
       
-    } catch (profileError) {
-      console.error('❌ Erreur création profil automatique:', profileError);
+      const storedHash = checkUser[0]?.password;
+      console.log('  - Hash stocké en DB:', storedHash);
+      console.log('  - Hash identique à celui généré:', storedHash === hashedPassword ? '✅ OUI' : '❌ NON');
+      console.log('  - Longueur stockée:', storedHash?.length);
+      
+      // Test de vérification immédiate
+      const testVerification = await bcrypt.compare(passwordStr, storedHash);
+      console.log('  - Test bcrypt.compare immédiat:', testVerification ? '✅ RÉUSSI' : '❌ ÉCHOUÉ');
+
+      // Création automatique du profil
+      try {
+        console.log('👤 Création automatique du profil pour utilisateur:', userId);
+        
+        const temporaryEmail = `user_${telephone}@temp.com`;
+        
+        await connection.execute(
+          `INSERT INTO Profile 
+           (id_utilisateur, email, pays, preferences) 
+           VALUES (?, ?, ?, ?)`,
+          [
+            userId, 
+            temporaryEmail, 
+            'CI', 
+            JSON.stringify({
+              notifications: true,
+              newsletter: false,
+              langue: 'fr'
+            })
+          ]
+        );
+        
+        console.log('✅ Profil créé automatiquement');
+        
+      } catch (profileError) {
+        console.error('❌ Erreur création profil automatique:', profileError);
+        await connection.rollback();
+        throw new Error(`Échec création profil: ${profileError.message}`);
+      }
+
+      await connection.commit();
+      console.log('✅ Transaction utilisateur + profil commitée');
+      console.log('📝 ========== FIN CRÉATION UTILISATEUR ==========');
+
+      return userId;
+
+    } catch (error) {
       await connection.rollback();
-      throw new Error(`Échec création profil: ${profileError.message}`);
+      console.error('❌ Erreur création utilisateur - rollback:', error);
+      throw error;
+    } finally {
+      connection.release(); 
     }
-
-    await connection.commit();
-    console.log('✅ Transaction utilisateur + profil commitée');
-
-    return userId;
-
-  } catch (error) {
-    await connection.rollback();
-    console.error('Erreur création utilisateur - rollback:', error);
-    throw error;
-  } finally {
-    connection.release(); 
   }
-}
+
   /**
-   * Trouve un utilisateur par numéro de téléphone
-   */ 
+   * Trouve un utilisateur par numéro de téléphone avec logs
+   */
   static async findByTelephone(telephone) {
     try {
       console.log('🔍 Recherche utilisateur par téléphone:', telephone);
@@ -87,11 +191,136 @@ class User {
         [telephone] 
       );
       
-      console.log('📊 Résultat recherche:', rows.length > 0 ? 'trouvé' : 'non trouvé');
+      if (rows.length > 0) {
+        console.log('✅ Utilisateur trouvé:', {
+          id: rows[0].id_utilisateur,
+          fullname: rows[0].fullname,
+          telephone: rows[0].telephone,
+          role: rows[0].role,
+          est_actif: rows[0].est_actif,
+          hasHash: !!rows[0].password,
+          hashPreview: rows[0].password ? rows[0].password.substring(0, 30) + '...' : null,
+          hashLength: rows[0].password?.length
+        });
+      } else {
+        console.log('❌ Aucun utilisateur trouvé avec ce téléphone');
+      }
+      
       return rows[0] || null;
-
     } catch (error) {
       console.error('❌ Erreur recherche par téléphone:', error);
+      throw error;
+    }
+  }
+/**
+ * Trouve un utilisateur par email via le profil
+ */
+static async findByEmail(email) {
+  try {
+    console.log('🔍 Recherche utilisateur par email:', email);
+    
+    const [rows] = await pool.execute(
+      `SELECT u.* FROM Utilisateur u
+       INNER JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+       WHERE p.email = ?`,
+      [email]
+    );
+    
+    if (rows.length > 0) {
+      console.log('✅ Utilisateur trouvé:', rows[0].id_utilisateur);
+      return rows[0];
+    }
+    
+    console.log('❌ Aucun utilisateur trouvé avec cet email');
+    return null;
+    
+  } catch (error) {
+    console.error('❌ Erreur recherche par email:', error);
+    throw error;
+  }
+}
+  /**
+   * Vérifie les identifiants de connexion avec mot de passe (4 chiffres)
+   * Version ULTRA-DÉTAILLÉE pour débogage
+   */
+  static async verifyCredentials(telephone, password) {
+    try {
+      console.log('🔐 ========== DÉBUT VERIFY CREDENTIALS ==========');
+      console.log('  - Téléphone reçu:', telephone);
+      console.log('  - Mot de passe reçu brut:', password);
+      console.log('  - Type du mot de passe reçu:', typeof password);
+      
+      // Étape 1: Conversion en string
+      const passwordStr = String(password);
+      console.log('  - Mot de passe converti en string:', passwordStr);
+      console.log('  - Type après conversion:', typeof passwordStr);
+      console.log('  - Longueur après conversion:', passwordStr.length);
+      
+      // Étape 2: Validation du format (4 chiffres)
+      if (!/^\d{4}$/.test(passwordStr)) {
+        console.log('❌ Format de mot de passe invalide');
+        console.log('  - Le format doit être exactement 4 chiffres');
+        console.log('  - Reçu:', passwordStr);
+        return null;
+      }
+      console.log('✅ Format du mot de passe valide');
+      
+      // Étape 3: Recherche de l'utilisateur
+      const user = await this.findByTelephone(telephone);
+      
+      if (!user) {
+        console.log('❌ Aucun utilisateur trouvé avec ce téléphone');
+        return null;
+      }
+
+      console.log('✅ Utilisateur trouvé, vérification du mot de passe...');
+      console.log('  - ID utilisateur:', user.id_utilisateur);
+      console.log('  - Hash stocké complet:', user.password);
+      console.log('  - Début du hash:', user.password.substring(0, 30) + '...');
+      
+      // Étape 4: Vérification bcrypt
+      const isPasswordValid = await bcrypt.compare(passwordStr, user.password);
+      
+      if (!isPasswordValid) {
+        console.log('❌ Mot de passe invalide - bcrypt.compare a retourné false');
+        return null;
+      }
+
+      console.log('✅ Mot de passe valide - bcrypt.compare OK');
+
+      // Étape 5: Vérification du statut du compte
+      if (!user.est_actif) {
+        console.log('❌ Compte désactivé');
+        return null;
+      }
+
+      console.log('✅ Compte actif');
+
+      // Étape 6: Récupération du profil
+      let profile = null;
+      try {
+        profile = await Profile.findByUserId(user.id_utilisateur);
+        console.log('✅ Profil trouvé pour l\'utilisateur');
+      } catch (profileError) {
+        console.warn('⚠️ Profil non trouvé pour l\'utilisateur:', user.id_utilisateur);
+      }
+
+      console.log('✅ Authentification réussie pour ID:', user.id_utilisateur);
+      console.log('🔐 ========== FIN VERIFY CREDENTIALS ==========');
+
+      return {
+        id: user.id_utilisateur,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        date_inscription: user.date_inscription,
+        profile: profile
+      };
+
+    } catch (error) {
+      console.error('❌ Erreur verifyCredentials:', error);
+      console.error('  - Stack trace:', error.stack);
       throw error;
     }
   }
@@ -104,7 +333,7 @@ class User {
       console.log('🔍 Recherche utilisateur par ID:', id);
       
       const [rows] = await pool.execute(
-        'SELECT id_utilisateur, fullname, telephone, role, est_actif, date_inscription FROM Utilisateur WHERE id_utilisateur = ?',
+        'SELECT id_utilisateur, fullname, telephone, role, est_actif, date_inscription, password FROM Utilisateur WHERE id_utilisateur = ?',
         [id]
       );
       
@@ -113,10 +342,10 @@ class User {
       if (rows[0]) {
         const user = rows[0];
         
-        // ✅ RÉCUPÉRATION DU PROFIL ASSOCIÉ
+        // Récupération du profil associé
         try {
           const profile = await Profile.findByUserId(id);
-          user.profile = profile; // Attacher le profil à l'utilisateur
+          user.profile = profile;
           console.log('✅ Profil attaché à l\'utilisateur');
         } catch (profileError) {
           console.warn('⚠️ Profil non trouvé pour l\'utilisateur:', id);
@@ -133,84 +362,84 @@ class User {
       throw error;
     }
   }
-static async findProprietaieProfile(id_utilisateur) {
-  try {
-    // console.log(`🔍 Recherche utilisateur par id de propriete: ${id_utilisateur}`);
-    
-    // ✅ CORRECTION : Requête qui JOINT DIRECTEMENT les informations du profil
-    const [rows] = await pool.query(
-      `SELECT 
-        u.id_utilisateur,
-        u.fullname,
-        u.telephone,
-        u.role,
-        u.est_actif,
-        p.avatar,            -- ✅ Avatar DIRECTEMENT accessible
-        p.email,
-        p.bio,
-        p.ville,
-        p.pays
-       FROM Utilisateur u
-       LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-       WHERE u.id_utilisateur = ?`,
-      [id_utilisateur]
-    );
-    
-    if (rows.length === 0) {
-      console.log(`📊 Résultat recherche id_propriete: non trouvé`);
+
+  /**
+   * Trouve un utilisateur par ID sans le mot de passe
+   */
+  static async findByIdWithoutPassword(id) {
+    const user = await this.findById(id);
+    if (user) {
+      delete user.password;
+    }
+    return user;
+  }
+
+  static async findProprietaieProfile(id_utilisateur) {
+    try {
+      const [rows] = await pool.query(
+        `SELECT 
+          u.id_utilisateur,
+          u.fullname,
+          u.telephone,
+          u.role,
+          u.est_actif,
+          p.avatar,
+          p.email,
+          p.bio,
+          p.ville,
+          p.pays
+         FROM Utilisateur u
+         LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+         WHERE u.id_utilisateur = ?`,
+        [id_utilisateur]
+      );
+      
+      if (rows.length === 0) {
+        return {
+          id_utilisateur: id_utilisateur,
+          fullname: 'Propriétaire',
+          telephone: '',
+          avatar: null
+        };
+      }
+      
+      const user = rows[0];
+      
+      return {
+        id_utilisateur: user.id_utilisateur,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        avatar: user.avatar,
+        email: user.email,
+        bio: user.bio,
+        ville: user.ville,
+        pays: user.pays
+      };
+      
+    } catch (error) {
+      console.error('❌ Erreur recherche utilisateur:', error);
       return {
         id_utilisateur: id_utilisateur,
         fullname: 'Propriétaire',
         telephone: '',
-        avatar: null  // ✅ Avatar à la racine
+        avatar: null
       };
     }
-    
-    const user = rows[0];
-    
-    // ✅ CORRECTION : S'assurer que l'avatar est au bon endroit
-    const result = {
-      id_utilisateur: user.id_utilisateur,
-      fullname: user.fullname,
-      telephone: user.telephone,
-      role: user.role,
-      est_actif: user.est_actif,
-      avatar: user.avatar,  // ✅ Avatar directement accessible
-      email: user.email,
-      bio: user.bio,
-      ville: user.ville,
-      pays: user.pays
-    };
-    
-    // console.log(`✅ Profil attaché à l'utilisateur - Avatar: ${result.avatar || 'null'}`);
-    return result;
-    
-  } catch (error) {
-    console.error('❌ Erreur recherche utilisateur:', error);
-    return {
-      id_utilisateur: id_utilisateur,
-      fullname: 'Propriétaire',
-      telephone: '',
-      avatar: null
-    };
   }
-}
 
   /**
-   * Vérifie si l'utilisateur existe dans la base de données
+   * Vérifie si l'utilisateur existe
    */
   static async exists(id) {
     try {
-      console.log('🔍 Vérification existence utilisateur ID:', id);
-      
       const [rows] = await pool.execute(
         'SELECT id_utilisateur FROM Utilisateur WHERE id_utilisateur = ?',
         [id]
       );
       
-      const exists = rows.length > 0;
-      console.log('📊 Utilisateur existe:', exists);
-      return exists;
+      return rows.length > 0;
 
     } catch (error) {
       console.error('❌ Erreur vérification existence:', error);
@@ -218,55 +447,55 @@ static async findProprietaieProfile(id_utilisateur) {
     }
   }
 
-  /**
-   * Vérifie les identifiants de connexion - VERSION AVEC PROFIL
+    /**
+   * Vérifie si l'utilisateur à définir un email dans son profil
    */
-  static async verifyCredentials(telephone) {
-    try {
-      console.log('🔐 Vérification credentials pour:', telephone);
-      
-      const user = await this.findByTelephone(telephone);
-      
-      if (!user) {
-        console.log('❌ Aucun utilisateur trouvé avec ce téléphone');
-        return null;
-      }
-
-      console.log('✅ Utilisateur trouvé:', { 
-        id: user.id_utilisateur, 
-        fullname: user.fullname,
-        est_actif: user.est_actif 
-      });
-
-      // ✅ RÉCUPÉRATION DU PROFIL
-      let profile = null;
-      try {
-        profile = await Profile.findByUserId(user.id_utilisateur);
-        console.log('✅ Profil trouvé pour l\'utilisateur');
-      } catch (profileError) {
-        console.warn('⚠️ Profil non trouvé pour l\'utilisateur:', user.id_utilisateur);
-      }
-
-      return {
-        id: user.id_utilisateur,
-        fullname: user.fullname,
-        telephone: user.telephone,
-        role: user.role,
-        est_actif: user.est_actif,
-        date_inscription: user.date_inscription,
-        profile: profile // ✅ INCLUSION DU PROFIL
-      };
-
-    } catch (error) {
-      console.error('❌ Error verifying credentials:', error);
-      throw error;
+/**
+ * Vérifie si l'utilisateur a un email personnel (non temporaire)
+ * @param {number} id - ID de l'utilisateur
+ * @returns {Promise<boolean>} - True si l'utilisateur a un email personnel
+ */
+static async hasEmail(id) {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT p.email FROM Utilisateur u
+       INNER JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+       WHERE u.id_utilisateur = ?`,
+      [id]
+    );
+    
+    console.log('🔍 Vérification email pour ID:', id);
+    console.log('📧 Email trouvé:', rows[0]?.email);
+    
+    if (rows.length === 0 || !rows[0].email) {
+      console.log('❌ Aucun email trouvé');
+      return false;
     }
+    
+    const email = rows[0].email;
+    
+    // Vérifier si c'est un email temporaire (format: user_XXXXX@temp.com)
+    const isTemporaryEmail = /^user_\d+@temp\.com$/.test(email);
+    
+    if (isTemporaryEmail) {
+      console.log('⚠️ Email temporaire détecté:', email);
+      return false;
+    }
+    
+    console.log('✅ Email personnel valide:', email);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Erreur vérification email:', error);
+    throw error;
   }
+}
 
+   // ==================== MÉTHODES AVANCÉES ====================
   /**
-   * Crée ou récupère un utilisateur - VERSION AVEC PROFIL
+   * Crée ou récupère un utilisateur (sans mot de passe pour findOrCreate)
    */
-  static async findOrCreate({ fullname, telephone, role = 'client' }) {
+  static async findOrCreate({ fullname, telephone, password, role = 'client' }) {
     try {
       console.log('🔄 Find or create utilisateur:', { fullname, telephone });
       
@@ -275,13 +504,11 @@ static async findProprietaieProfile(id_utilisateur) {
       if (user) {
         console.log('✅ Utilisateur existant trouvé');
         
-        // ✅ RÉCUPÉRATION DU PROFIL
         let profile = null;
         try {
           profile = await Profile.findByUserId(user.id_utilisateur);
         } catch (profileError) {
           console.warn('⚠️ Profil non trouvé, création automatique...');
-          // Créer le profil s'il n'existe pas
           try {
             await Profile.create({
               id_utilisateur: user.id_utilisateur,
@@ -311,14 +538,15 @@ static async findProprietaieProfile(id_utilisateur) {
             role: user.role,
             est_actif: user.est_actif,
             date_inscription: user.date_inscription,
-            profile: profile // ✅ PROFIL INCLUS
+            profile: profile
           }, 
           created: false 
         };
       }
       
+      // Créer nouvel utilisateur avec mot de passe
       console.log('📝 Création nouvel utilisateur');
-      const userId = await this.create({ fullname, telephone, role });
+      const userId = await this.create({ fullname, telephone, password, role });
       user = await this.findById(userId);
       
       return { 
@@ -329,7 +557,7 @@ static async findProprietaieProfile(id_utilisateur) {
           role: user.role,
           est_actif: user.est_actif,
           date_inscription: user.date_inscription,
-          profile: user.profile // ✅ PROFIL INCLUS
+          profile: user.profile
         }, 
         created: true 
       };
@@ -345,18 +573,12 @@ static async findProprietaieProfile(id_utilisateur) {
    */
   static async findOnly(telephone) {
     try {
-      console.log('🔍 Recherche utilisateur (sans création):', telephone);
-      
       const user = await this.findByTelephone(telephone);
       
       if (!user) {
-        console.log('❌ Utilisateur non trouvé');
         return null;
       }
 
-      console.log('✅ Utilisateur existant trouvé');
-      
-      // ✅ RÉCUPÉRATION DU PROFIL
       let profile = null;
       try {
         profile = await Profile.findByUserId(user.id_utilisateur);
@@ -371,7 +593,7 @@ static async findProprietaieProfile(id_utilisateur) {
         role: user.role,
         est_actif: user.est_actif,
         date_inscription: user.date_inscription,
-        profile: profile // ✅ PROFIL INCLUS
+        profile: profile
       };
 
     } catch (error) {
@@ -379,9 +601,115 @@ static async findProprietaieProfile(id_utilisateur) {
       throw error;
     }
   }
+/**
+ * Met à jour le fullname et/ou le telephone d'un utilisateur
+ * @param {number} id - ID de l'utilisateur
+ * @param {Object} userData - Données à mettre à jour (fullname, telephone)
+ * @returns {Promise<Object>} - Utilisateur mis à jour
+ */
+static async update(id, userData = {}) {
+  try {
+    console.log('✏️ ========== DÉBUT MISE À JOUR UTILISATEUR ==========');
+    console.log('  - ID utilisateur:', id);
+    console.log('  - Données à mettre à jour:', userData);
+
+    // Vérifier si l'utilisateur existe
+    const existingUser = await this.findById(id);
+    if (!existingUser) {
+      throw new Error(`Utilisateur avec l'ID ${id} non trouvé`);
+    }
+
+    // Champs autorisés : fullname et telephone seulement
+    const allowedFields = ['fullname', 'telephone'];
+    const fieldsToUpdate = {};
+    
+    Object.keys(userData).forEach(key => {
+      if (allowedFields.includes(key) && userData[key] !== undefined && userData[key] !== '') {
+        fieldsToUpdate[key] = userData[key];
+      }
+    });
+
+    // Vérifier si des champs sont à mettre à jour
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      console.log('  - Aucune donnée valide à mettre à jour');
+      return this.findById(id);
+    }
+
+    // Vérifier l'unicité du téléphone si modifié
+    if (fieldsToUpdate.telephone && fieldsToUpdate.telephone !== existingUser.telephone) {
+      console.log('  - Vérification unicité du téléphone:', fieldsToUpdate.telephone);
+      const existingPhoneUser = await this.findByTelephone(fieldsToUpdate.telephone);
+      if (existingPhoneUser && existingPhoneUser.id_utilisateur !== parseInt(id)) {
+        throw new Error('Ce numéro de téléphone est déjà utilisé');
+      }
+      console.log('  ✅ Téléphone unique disponible');
+    }
+
+    // Construction de la requête UPDATE
+    const setClause = Object.keys(fieldsToUpdate)
+      .map(field => `${field} = ?`)
+      .join(', ');
+    
+    const values = [...Object.values(fieldsToUpdate), id];
+
+    console.log('  - Requête SQL:', `UPDATE Utilisateur SET ${setClause} WHERE id_utilisateur = ?`);
+    console.log('  - Valeurs:', values);
+
+    const [result] = await pool.execute(
+      `UPDATE Utilisateur SET ${setClause} WHERE id_utilisateur = ?`,
+      values
+    );
+
+    if (result.affectedRows === 0) {
+      throw new Error('Aucune modification effectuée');
+    }
+
+    console.log(`✅ ${result.affectedRows} champ(s) mis à jour:`, fieldsToUpdate);
+    console.log('✏️ ========== FIN MISE À JOUR UTILISATEUR ==========');
+
+    // Retourner l'utilisateur mis à jour avec son profil
+    const updatedUser = await this.findById(id);
+    if (updatedUser) {
+      delete updatedUser.password;
+    }
+    return updatedUser;
+
+  } catch (error) {
+    console.error('❌ Erreur mise à jour utilisateur:', error);
+    throw error;
+  }
+}
+  /**
+   * Met à jour le mot de passe (avec validation 4 chiffres)
+   */
+  static async updatePassword(id, newPassword) {
+    try {
+      console.log('🔐 Mise à jour mot de passe pour utilisateur:', id);
+      
+      // Validation du nouveau mot de passe (4 chiffres)
+      const passwordStr = String(newPassword);
+      if (!/^\d{4}$/.test(passwordStr)) {
+        throw new Error(`Le mot de passe doit contenir exactement 4 chiffres. Reçu: "${passwordStr}"`);
+      }
+      
+      const hashedPassword = await this.hashPassword(passwordStr);
+      
+      const [result] = await pool.execute(
+        'UPDATE Utilisateur SET password = ? WHERE id_utilisateur = ?',
+        [hashedPassword, id]
+      );
+
+      console.log('✅ Mot de passe mis à jour:', result.affectedRows > 0);
+      return result.affectedRows > 0;
+
+    } catch (error) {
+      console.error('❌ Erreur mise à jour mot de passe:', error);
+      throw error;
+    }
+  }
 
   /**
-   * Met à jour le profil de manière sécurisée
+   * Met à jour le profil utilisateur
    */
   static async safeUpdateProfile(id, updates) {
     try {
@@ -390,7 +718,6 @@ static async findProprietaieProfile(id_utilisateur) {
       const allowedFields = ['fullname', 'telephone'];
       const fieldsToUpdate = {};
       
-      // Filtrer seulement les champs autorisés
       Object.keys(updates).forEach(key => {
         if (allowedFields.includes(key) && updates[key] !== undefined) {
           fieldsToUpdate[key] = updates[key];
@@ -398,11 +725,9 @@ static async findProprietaieProfile(id_utilisateur) {
       });
 
       if (Object.keys(fieldsToUpdate).length === 0) {
-        console.log('⚠️ Aucun champ valide à mettre à jour');
         return false;
       }
 
-      // Vérifier si le téléphone existe déjà (sauf pour l'utilisateur actuel)
       if (fieldsToUpdate.telephone) {
         const existingUser = await this.findByTelephone(fieldsToUpdate.telephone);
         if (existingUser && existingUser.id_utilisateur !== parseInt(id)) {
@@ -416,17 +741,12 @@ static async findProprietaieProfile(id_utilisateur) {
       
       const values = [...Object.values(fieldsToUpdate), id];
 
-      console.log('📝 Requête UPDATE:', `UPDATE Utilisateur SET ${setClause} WHERE id_utilisateur = ?`);
-      
       const [result] = await pool.execute(
         `UPDATE Utilisateur SET ${setClause} WHERE id_utilisateur = ?`,
         values
       );
 
-      const updated = result.affectedRows > 0;
-      console.log('📊 Mise à jour réussie:', updated);
-      
-      return updated;
+      return result.affectedRows > 0;
 
     } catch (error) {
       console.error('❌ Erreur mise à jour profil:', error);
@@ -435,7 +755,7 @@ static async findProprietaieProfile(id_utilisateur) {
   }
 
   /**
-   * Supprime un utilisateur et son profil
+   * Supprime un utilisateur
    */
   static async delete(id) {
     const connection = await pool.getConnection();
@@ -445,29 +765,24 @@ static async findProprietaieProfile(id_utilisateur) {
 
       console.log('🗑️ Suppression utilisateur et profil ID:', id);
 
-      // ✅ SUPPRESSION DU PROFIL EN PREMIER
       try {
         await Profile.delete(id);
         console.log('✅ Profil supprimé');
       } catch (profileError) {
-        console.warn('⚠️ Erreur suppression profil (peut ne pas exister):', profileError.message);
+        console.warn('⚠️ Erreur suppression profil:', profileError.message);
       }
 
-      // Suppression de l'utilisateur
       const [result] = await connection.execute(
         'DELETE FROM Utilisateur WHERE id_utilisateur = ?',
         [id]
       );
 
-      const deleted = result.affectedRows > 0;
-      console.log('📊 Suppression utilisateur réussie:', deleted);
-
       await connection.commit();
-      return deleted;
+      return result.affectedRows > 0;
 
     } catch (error) {
       await connection.rollback();
-      console.error('❌ Erreur suppression utilisateur - rollback:', error);
+      console.error('❌ Erreur suppression utilisateur:', error);
       throw error;
     } finally {
       connection.release();
@@ -475,7 +790,7 @@ static async findProprietaieProfile(id_utilisateur) {
   }
 
   /**
-   * Vérifie la santé de la table utilisateur
+   * Vérifie la santé de la table
    */
   static async checkTableHealth() {
     try {
@@ -504,8 +819,8 @@ static async findProprietaieProfile(id_utilisateur) {
     }
   }
 
-    /**
-   * Sauvegarder le token Expo d'un utilisateur
+  /**
+   * Sauvegarder le token Expo
    */
   static async saveExpoPushToken(userId, expoPushToken) {
     try {
@@ -516,10 +831,7 @@ static async findProprietaieProfile(id_utilisateur) {
         [expoPushToken, userId]
       );
 
-      const updated = result.affectedRows > 0;
-      console.log('📊 Token Expo sauvegardé:', updated);
-      
-      return updated;
+      return result.affectedRows > 0;
     } catch (error) {
       console.error('❌ Erreur sauvegarde token Expo:', error);
       throw error;
@@ -527,7 +839,7 @@ static async findProprietaieProfile(id_utilisateur) {
   }
 
   /** 
-   * Récupérer le token Expo d'un utilisateur 
+   * Récupérer le token Expo 
    */
   static async getExpoPushToken(userId) {
     try {
@@ -544,7 +856,7 @@ static async findProprietaieProfile(id_utilisateur) {
   }
 
   /**
-   * Récupérer plusieurs tokens Expo par liste d'IDs
+   * Récupérer plusieurs tokens Expo
    */
   static async getExpoPushTokens(userIds) {
     try {
@@ -564,7 +876,7 @@ static async findProprietaieProfile(id_utilisateur) {
       console.error('❌ Erreur récupération tokens Expo:', error);
       return [];
     }
-  } 
+  }
 }
 
 export default User;
