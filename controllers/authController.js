@@ -139,79 +139,181 @@ export const authController = {
   /**
    * CONNEXION d'un utilisateur - AVEC VÉRIFICATION MOT DE PASSE (4 chiffres)
    */
+  // async login(req, res) {
+  //   try {
+  //     const { telephone, password } = req.body;
+  //     console.log('🔐 Login - Téléphone reçu:', telephone);
+
+
+  //     // c'est le mot de passe qui manque on lui dit de telecharger la nouvelle version de l'application
+  //     if (!password) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: 'Mot de passe requis. Veuillez mettre à jour votre application pour utiliser la nouvelle méthode de connexion.'
+  //       });
+  //     }
+  //     if (!telephone && !password) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: 'Téléphone et mot de passe requis'
+  //       });
+  //     }
+
+  //     // Validation du format du mot de passe (4 chiffres)
+  //     if (!/^\d{4}$/.test(password)) {
+  //       return res.status(400).json({
+  //         success: false,
+  //         message: 'Le mot de passe doit contenir exactement 4 chiffres'
+  //       });
+  //     }
+
+  //     const cleanedTelephone = telephone.replace(/\s/g, '');
+
+  //     console.log('🔍 Vérification credentials...');
+      
+  //     // Vérification avec mot de passe
+  //     const user = await User.verifyCredentials(cleanedTelephone, password);
+      
+  //     if (!user) {
+  //       console.log('❌ Authentification échouée - téléphone ou mot de passe incorrect');
+  //       return res.status(401).json({
+  //         success: false,
+  //         message: 'Numéro de téléphone ou mot de passe incorrect'
+  //       });
+  //     }
+
+  //     if (!user.est_actif) {
+  //       console.log('🚫 Compte désactivé pour:', user.id);
+  //       return res.status(403).json({
+  //         success: false,
+  //         message: 'Ce compte a été désactivé'
+  //       });
+  //     }
+
+  //     // Générer le token
+  //     const token = generateToken(user.id, user.telephone, user.role);
+      
+  //     console.log('✅ Login réussi - Token généré pour:', user.id);
+
+  //     res.json({
+  //       success: true,
+  //       message: 'Connexion réussie',
+  //       token,
+  //       user: {
+  //         id: user.id,
+  //         fullname: user.fullname,
+  //         telephone: user.telephone,
+  //         role: user.role,
+  //         est_actif: user.est_actif,
+  //         date_inscription: user.date_inscription,
+  //         profile: user.profile
+  //       }
+  //     });
+
+  //   } catch (error) {
+  //     console.error('❌ Login error:', error);
+  //     res.status(500).json({
+  //       success: false,
+  //       message: 'Erreur lors de la connexion',
+  //       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+  //     });
+  //   }
+  // },
+
+
   async login(req, res) {
-    try {
-      const { telephone, password } = req.body;
-      console.log('🔐 Login - Téléphone reçu:', telephone);
+  try {
+    const { telephone, password } = req.body;
+    console.log('🔐 Login - Téléphone reçu:', telephone);
 
-      if (!telephone || !password) {
-        return res.status(400).json({
-          success: false,
-          message: 'Téléphone et mot de passe requis'
-        });
-      }
-
-      // Validation du format du mot de passe (4 chiffres)
-      if (!/^\d{4}$/.test(password)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Le mot de passe doit contenir exactement 4 chiffres'
-        });
-      }
-
-      const cleanedTelephone = telephone.replace(/\s/g, '');
-
-      console.log('🔍 Vérification credentials...');
-      
-      // Vérification avec mot de passe
-      const user = await User.verifyCredentials(cleanedTelephone, password);
-      
-      if (!user) {
-        console.log('❌ Authentification échouée - téléphone ou mot de passe incorrect');
-        return res.status(401).json({
-          success: false,
-          message: 'Numéro de téléphone ou mot de passe incorrect'
-        });
-      }
-
-      if (!user.est_actif) {
-        console.log('🚫 Compte désactivé pour:', user.id);
-        return res.status(403).json({
-          success: false,
-          message: 'Ce compte a été désactivé'
-        });
-      }
-
-      // Générer le token
-      const token = generateToken(user.id, user.telephone, user.role);
-      
-      console.log('✅ Login réussi - Token généré pour:', user.id);
-
-      res.json({
-        success: true,
-        message: 'Connexion réussie',
-        token,
-        user: {
-          id: user.id,
-          fullname: user.fullname,
-          telephone: user.telephone,
-          role: user.role,
-          est_actif: user.est_actif,
-          date_inscription: user.date_inscription,
-          profile: user.profile
-        }
-      });
-
-    } catch (error) {
-      console.error('❌ Login error:', error);
-      res.status(500).json({
+    if (!telephone) {
+      return res.status(400).json({
         success: false,
-        message: 'Erreur lors de la connexion',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'Téléphone requis'
       });
     }
-  },
 
+    const cleanedTelephone = telephone.replace(/\s/g, '');
+
+    // 🔍 Chercher utilisateur d'abord
+    const user = await User.findByTelephone(cleanedTelephone);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur introuvable'
+      });
+    }
+
+    // 🟡 CAS 1 : Ancien utilisateur (pas de mot de passe)
+    if (!user.password) {
+      return res.status(200).json({
+        success: false,
+        status: "NO_PASSWORD",
+        message: "Votre compte doit être sécurisé. Veuillez créer un mot de passe.",
+        userId: user.id
+      });
+    }
+
+    // 🔴 Maintenant on exige le mot de passe
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mot de passe requis'
+      });
+    }
+
+    // Validation format
+    if (!/^\d{4}$/.test(password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le mot de passe doit contenir exactement 4 chiffres'
+      });
+    }
+
+    // 🔐 Vérification credentials
+    const isValid = await User.verifyPassword(user, password);
+
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Mot de passe incorrect'
+      });
+    }
+
+    if (!user.est_actif) {
+      return res.status(403).json({
+        success: false,
+        message: 'Ce compte a été désactivé'
+      });
+    }
+
+    // 🎟️ Token
+    const token = generateToken(user.id, user.telephone, user.role);
+
+    res.json({
+      success: true,
+      message: 'Connexion réussie',
+      token,
+      user: {
+        id: user.id,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        date_inscription: user.date_inscription,
+        profile: user.profile
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la connexion'
+    });
+  }
+},
   /**
    * CONNEXION AVEC SEUL TÉLÉPHONE (pour compatibilité existante)
    * À utiliser pour les tests ou les applications existantes
