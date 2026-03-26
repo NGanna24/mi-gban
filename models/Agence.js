@@ -459,7 +459,7 @@ static async getDashboardMetrics(id_agence) {
     ] = await Promise.all([
       // ✅ Première requête - Statistiques suiveurs
       this.executeQuery(`
-        SELECT 
+        SELECT  
           COUNT(*) as total_suiveurs,
           SUM(CASE WHEN sa.notifications_actives = TRUE THEN 1 ELSE 0 END) as suiveurs_actifs_notifications,
           COUNT(DISTINCT CASE WHEN u.date_inscription >= DATE_SUB(CURDATE(), INTERVAL 30 DAY) THEN u.id_utilisateur END) as nouveaux_suiveurs_30j,
