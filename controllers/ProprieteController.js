@@ -2312,7 +2312,7 @@ async getProprietesAccueil(req, res) {
     // si la version du frontend est inférieur à celle du backend alors je vais afficher 
     // le modal de la mise a jour de l'application afin que l'utilisateur puisse mettre à jour son application pour bénéficier des nouvelles fonctionnalités et des améliorations de performance
 
-    const versionActuelle = '2.0.0'; // Mettre à jour cette version à chaque nouvelle release
+    const versionActuelle = '2.0.0'; // Mettre à jour cette version à chaque nouvelle release pour forcer les utilisateurs à mettre à jour leur application
     const { id_utilisateur } = req.user || {};
     const { limit = 20 } = req.query;
 
