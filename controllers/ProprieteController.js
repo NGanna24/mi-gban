@@ -139,10 +139,9 @@ async function getQuartierFromCoordinates(longitude, latitude) {
 
 export const ProprieteController = { 
   
-// ✅ CRÉER UNE PROPRIÉTÉ AVEC GÉOCODAGE AUTOMATIQUE DU QUARTIER ET DE LA VILLE
+// Dans ProprieteController.js - Version corrigée
 async creerPropriete(req, res) {
   try {
-    // Données de base de la propriété 
     const {
       id_utilisateur,
       telephone,
@@ -156,13 +155,13 @@ async creerPropriete(req, res) {
       duree_min_sejour = 1,
       longitude,
       latitude,
-      quartier, // ← IGNORÉ, SERA REMPLACÉ PAR LA VALEUR BACKEND
-      ville,    // ← IGNORÉ, SERA REMPLACÉ PAR LA VALEUR BACKEND
+      quartier, // ← Valeur du frontend (Expo)
+      ville,    // ← Valeur du frontend (Expo)
       pays,
       statut = 'disponible'
     } = req.body;
 
-    // ✅ Validation des champs obligatoires
+    // Validation des champs obligatoires
     if (!id_utilisateur || !titre || !type_propriete || !prix) {
       return res.status(400).json({
         success: false,
@@ -170,15 +169,6 @@ async creerPropriete(req, res) {
       });
     }
 
-    // ✅ VALIDATION DU PRIX
-    if (isNaN(prix) || parseFloat(prix) <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Le prix doit être un nombre valide supérieur à 0'
-      });
-    }
-
-    // ✅ VÉRIFICATION STRICTE: L'utilisateur doit exister
     const userExists = await User.exists(id_utilisateur);
     if (!userExists) {
       return res.status(404).json({
@@ -187,65 +177,52 @@ async creerPropriete(req, res) {
       });
     }
 
-    // ✅ ÉTAPE CRITIQUE : DÉTERMINER LE QUARTIER ET LA VILLE AUTOMATIQUEMENT
-    let quartierFinal = null;
-    let villeFinale = ville || null; // Valeur par défaut depuis le frontend
-    let paysFinal = pays || 'CI';    // Valeur par défaut depuis le frontend
+    // ✅ PRIORITÉ AUX DONNÉES DU FRONTEND (Expo)
+    let quartierFinal = quartier || null;     // Garde la valeur Expo
+    let villeFinale = ville || null;          // Garde la valeur Expo
+    let paysFinal = pays || 'CI';             // Garde la valeur Expo
     let adresseComplete = null;
 
-    // Si des coordonnées valides sont fournies, on tente le géocodage inversé
-    if (longitude && latitude && longitude !== 0 && latitude !== 0) {
-      console.log('🗺️ Tentative de détermination automatique du quartier et ville...');
+    // 🔥 SEULEMENT SI LE FRONTEND N'A PAS FOURNI DE QUARTIER, on essaie le géocodage
+    if ((!quartier || quartier === '') && longitude && latitude && longitude !== 0 && latitude !== 0) {
+      console.log('🗺️ Frontend n\'a pas fourni de quartier, tentative de géocodage...');
       
       try {
         const locationData = await getQuartierFromCoordinates(longitude, latitude);
         
-        // ✅ QUARTIER - Priorité à la valeur du géocodeur
-        if (locationData.quartier) {
+        // Vérifier si le quartier trouvé est valide (pas un nom de commerce)
+        const motsCommerces = ['coiffure', 'salon', 'restaurant', 'bar', 'boutique', 
+                               'magasin', 'pharmacie', 'garage', 'hôtel', 'école'];
+        
+        const estCommerce = motsCommerces.some(mot => 
+          locationData.quartier?.toLowerCase().includes(mot.toLowerCase())
+        );
+        
+        if (locationData.quartier && !estCommerce) {
           quartierFinal = locationData.quartier;
-          console.log(`✅ Quartier automatique utilisé: ${quartierFinal} (remplace la valeur frontend: ${quartier || 'non fournie'})`);
-        } else {
-          console.log(`⚠️ Géocodage n'a pas trouvé de quartier, conservation valeur frontend: ${quartier || 'non fournie'}`);
-          quartierFinal = quartier || 'Non spécifié';
+          console.log(`✅ Quartier trouvé par géocodage: ${quartierFinal}`);
         }
         
-        // ✅ VILLE - Priorité à la valeur du géocodeur
-        if (locationData.ville) {
+        // Pour la ville, on peut prendre celle du géocodeur si le frontend n'en a pas
+        if ((!ville || ville === '') && locationData.ville) {
           villeFinale = locationData.ville;
-          console.log(`✅ Ville automatique utilisée: ${villeFinale} (remplace la valeur frontend: ${ville || 'non fournie'})`);
-        } else {
-          console.log(`⚠️ Géocodage n'a pas trouvé de ville, conservation valeur frontend: ${ville || 'non fournie'}`);
-          villeFinale = ville || 'Non spécifié';
         }
         
-        // ✅ PAYS - Priorité à la valeur du géocodeur
-        if (locationData.pays) {
+        if ((!pays || pays === '') && locationData.pays) {
           paysFinal = locationData.pays;
-          console.log(`✅ Pays automatique utilisé: ${paysFinal} (remplace la valeur frontend: ${pays || 'non fournie'})`);
         }
         
-        // ✅ Adresse complète (optionnel)
         adresseComplete = locationData.adresse_complete;
         
       } catch (geoError) {
-        console.error('❌ Erreur lors du géocodage inversé:', geoError);
-        // En cas d'erreur, on garde les valeurs du frontend
-        quartierFinal = quartier || 'Non spécifié';
-        villeFinale = ville || 'Non spécifié';
-        paysFinal = pays || 'CI';
+        console.error('❌ Erreur géocodage:', geoError);
       }
     } else {
-      // Pas de coordonnées valides, on garde les valeurs du frontend
-      console.log('⚠️ Coordonnées non fournies ou invalides, utilisation des valeurs frontend');
-      quartierFinal = quartier || 'Non spécifié';
-      villeFinale = ville || 'Non spécifié';
-      paysFinal = pays || 'CI';
+      console.log(`✅ Utilisation des données frontend: quartier="${quartierFinal}", ville="${villeFinale}"`);
     }
 
-    // ✅ Préparer les caractéristiques depuis le body
+    // Préparer les caractéristiques
     const caracteristiques = {};
-
-    // Liste des champs réservés (ne pas inclure dans les caractéristiques)
     const reservedFields = [
       'id_utilisateur', 'telephone', 'titre', 'type_propriete', 'description', 
       'prix', 'longitude', 'latitude', 'quartier', 'ville', 'pays', 
@@ -253,7 +230,6 @@ async creerPropriete(req, res) {
       'type_transaction', 'periode_facturation', 'charges_comprises', 'duree_min_sejour'
     ];
 
-    // Extraire les caractéristiques du body avec validation de type
     Object.keys(req.body).forEach(key => {
       if (!reservedFields.includes(key)) {
         const value = req.body[key];
@@ -274,21 +250,16 @@ async creerPropriete(req, res) {
       }
     });
 
-    console.log('📦 Données reçues:', {
+    console.log('📦 Données finales:', {
       id_utilisateur, 
       titre, 
-      type_propriete, 
-      type_transaction, 
-      prix,
-      coordonnees: { longitude, latitude },
-      quartier_final: quartierFinal, // ← Quartier déterminé par le backend
-      ville_finale: villeFinale,     // ← Ville déterminée par le backend
-      pays_final: paysFinal,         // ← Pays déterminé par le backend
-      caracteristiques: Object.keys(caracteristiques).length,
-      fichiers: req.files ? req.files.length : 0
+      quartier_final: quartierFinal,
+      ville_finale: villeFinale,
+      pays_final: paysFinal,
+      source: quartierFinal === quartier ? 'frontend' : 'geocodage'
     });
 
-    // ✅ Créer la propriété avec le quartier ET la ville déterminés automatiquement
+    // Créer la propriété
     const proprieteData = { 
       id_utilisateur,
       titre,
@@ -297,9 +268,9 @@ async creerPropriete(req, res) {
       prix,
       longitude: longitude || 0,
       latitude: latitude || 0,
-      quartier: quartierFinal, // ← TOUJOURS LA VALEUR BACKEND (géocodage ou frontend)
-      ville: villeFinale,      // ← MAINTENANT UTILISE LA VILLE DU GÉOCODEUR
-      pays: paysFinal,         // ← PAYS DU GÉOCODEUR
+      quartier: quartierFinal || 'Non spécifié',
+      ville: villeFinale || 'Non spécifié',
+      pays: paysFinal,
       statut,
       type_transaction, 
       periode_facturation,
@@ -310,10 +281,8 @@ async creerPropriete(req, res) {
 
     const nouvellePropriete = await Propriete.create(proprieteData);
 
-    // ✅ Gestion des médias
+    // Gestion des médias (inchangée)
     if (req.files && req.files.length > 0) {
-      console.log(`📸 Tentative d'insertion de ${req.files.length} médias`);
-      
       const proprieteInstance = new Propriete();
       proprieteInstance.id_propriete = nouvellePropriete.id_propriete;
       
@@ -339,13 +308,6 @@ async creerPropriete(req, res) {
         
         const ordreAffichage = mediaMetadata.ordre_affichage || (i + 1);
         
-        console.log(`📸 Ajout média ${i + 1}:`, {
-          fichier: file.filename,
-          type: typeMedia,
-          estPrincipale,
-          ordreAffichage
-        });
-        
         await proprieteInstance.addMedia(
           file.filename,
           typeMedia,
@@ -353,48 +315,22 @@ async creerPropriete(req, res) {
           parseInt(ordreAffichage)
         );
       }
-      console.log(`✅ ${req.files.length} médias insérés avec succès`);
     }
 
-    // ✅ Récupérer la propriété complète
     const proprieteComplete = await Propriete.findById(nouvellePropriete.id_propriete);
 
-    // ✅ Notifications en arrière-plan
-    console.log('🚀 Lancement des notifications...');
+    // Notifications (inchangée)
     NotificationService.notifyAllUsersAboutNewProperty(proprieteComplete)
-      .then(result => {
-        console.log(`✅ Notifications envoyées avec succès à tous les utilisateurs`);
-        console.log(`📊 Détail: ${result?.length || 0} tickets de notification`); 
-      })
-      .catch(error => {
-        console.error('❌ Erreur lors de l\'envoi des notifications:', error);
-      });
+      .catch(error => console.error('Erreur notifications:', error));
 
-    // ✅ RÉPONSE AVEC INFORMATION SUR LE QUARTIER ET LA VILLE
     res.status(201).json({
       success: true,
       message: 'Propriété créée avec succès',
       data: proprieteComplete,
       metadata: {
-        geocodage: {
-          utilise: !!(longitude && latitude && longitude !== 0 && latitude !== 0),
-          succes: !!(quartierFinal && quartierFinal !== 'Non spécifié' && quartierFinal !== quartier) ||
-                  !!(villeFinale && villeFinale !== 'Non spécifié' && villeFinale !== ville),
-        },
-        sources: {
-          quartier: quartierFinal !== quartier ? 'automatique' : (quartier ? 'frontend' : 'defaut'),
-          ville: villeFinale !== ville ? 'automatique' : (ville ? 'frontend' : 'defaut'),
-          pays: paysFinal !== pays ? 'automatique' : (pays ? 'frontend' : 'defaut')
-        },
-        valeurs: {
-          quartier_determine: quartierFinal,
-          ville_determinee: villeFinale,
-          pays_determine: paysFinal
-        },
-        ignore_depuis_frontend: {
-          quartier: quartier || 'non fourni',
-          ville: ville || 'non fournie',
-          pays: pays || 'non fourni'
+        source: {
+          quartier: quartierFinal === quartier ? 'frontend' : (quartierFinal ? 'geocodage' : 'defaut'),
+          ville: villeFinale === ville ? 'frontend' : (villeFinale ? 'geocodage' : 'defaut')
         }
       }
     });
@@ -402,16 +338,14 @@ async creerPropriete(req, res) {
   } catch (error) {
     console.error('❌ Erreur création propriété:', error);
     
-    // ✅ Supprimer les fichiers uploadés en cas d'erreur
     if (req.files && req.files.length > 0) {
       req.files.forEach(file => {
         const filePath = path.join('uploads/properties/', file.filename);
         if (fs.existsSync(filePath)) {
           try {
             fs.unlinkSync(filePath);
-            console.log(`🗑️ Fichier supprimé: ${file.filename}`);
           } catch (unlinkError) {
-            console.error('❌ Erreur suppression fichier:', unlinkError);
+            console.error('Erreur suppression fichier:', unlinkError);
           }
         }
       });
@@ -2369,7 +2303,16 @@ async modifierPropriete(req, res) {
 
 // 📱 MÉTHODE POUR L'ACCUEIL - VERSION AVEC SCORING INTELLIGENT
 async getProprietesAccueil(req, res) {
+
+
   try {
+
+    // je vais cree une variable qui va contenir la version actuelle de l'application
+    // cette version sera utilisé pour etre comparer avec la version que je vais indiquer dans le fontend 
+    // si la version du frontend est inférieur à celle du backend alors je vais afficher 
+    // le modal de la mise a jour de l'application afin que l'utilisateur puisse mettre à jour son application pour bénéficier des nouvelles fonctionnalités et des améliorations de performance
+
+    const versionActuelle = '2.0.0'; // Mettre à jour cette version à chaque nouvelle release
     const { id_utilisateur } = req.user || {};
     const { limit = 20 } = req.query;
 
@@ -2563,7 +2506,7 @@ async getProprietesAccueil(req, res) {
           proprietes = await Propriete.findAll(parseInt(limit), 0, {});
           typeContenu = 'recentes_fallback';
           metadata.fallbackUtilise = true;
-        }
+        } 
       }
     } else {
       // Visiteur non connecté - propriétés populaires 
@@ -2601,7 +2544,8 @@ async getProprietesAccueil(req, res) {
         ...metadata,
         total: proprietesAvecUrls.length,
         type: typeContenu,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        versionActuelleDeLApplication: versionActuelle
       }
     });
 

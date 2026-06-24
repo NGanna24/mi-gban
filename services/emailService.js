@@ -11,7 +11,7 @@ class EmailService {
         user: process.env.SMTP_USER, // Ton email
         pass: process.env.SMTP_PASS, // Ton mot de passe ou mot de passe d'application
       },
-      tls: {
+      tls: { 
         rejectUnauthorized: false
       }
     });
@@ -149,7 +149,7 @@ class EmailService {
             </div>
           </div>
           <div class="footer">
-            <p>© 2024 Mi gban - Votre partenaire immobilier de confiance</p>
+            <p>© 2026 Mi gban - Votre partenaire immobilier de confiance</p>
             <p>Cet email a été envoyé automatiquement, merci de ne pas y répondre.</p>
           </div>
         </div>
