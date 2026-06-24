@@ -142,6 +142,13 @@ export const ProprieteController = {
 // ✅ CRÉER UNE PROPRIÉTÉ AVEC GÉOCODAGE AUTOMATIQUE DU QUARTIER ET DE LA VILLE
 async creerPropriete(req, res) {
   try {
+
+    // je vais cree une variable qui va contenir la version actuelle de l'application
+    // cette version sera utilisé pour etre comparer avec la version que je vais indiquer dans le fontend 
+    // si la version du frontend est inférieur à celle du backend alors je vais afficher 
+    // le modal de la mise a jour de l'application afin que l'utilisateur puisse mettre à jour son application pour bénéficier des nouvelles fonctionnalités et des améliorations de performance
+
+    const versionActuelle = '1.0.0'; // Mettre à jour cette version à chaque nouvelle release
     // Données de base de la propriété 
     const {
       id_utilisateur,
@@ -2370,6 +2377,12 @@ async modifierPropriete(req, res) {
 // 📱 MÉTHODE POUR L'ACCUEIL - VERSION AVEC SCORING INTELLIGENT
 async getProprietesAccueil(req, res) {
   try {
+    // je vais cree une variable qui va contenir la version actuelle de l'application
+    // cette version sera utilisé pour etre comparer avec la version que je vais indiquer dans le fontend 
+    // si la version du frontend est inférieur à celle du backend alors je vais afficher 
+    // le modal de la mise a jour de l'application afin que l'utilisateur puisse mettre à jour son application pour bénéficier des nouvelles fonctionnalités et des améliorations de performance
+
+    const versionActuelle = '1.0.0'; // Mettre à jour cette version à chaque nouvelle release
     const { id_utilisateur } = req.user || {};
     const { limit = 20 } = req.query;
 
@@ -2601,7 +2614,8 @@ async getProprietesAccueil(req, res) {
         ...metadata,
         total: proprietesAvecUrls.length,
         type: typeContenu,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        versionActuelleDeLApplication: versionActuelle
       }
     });
 
