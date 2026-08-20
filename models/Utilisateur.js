@@ -877,6 +877,7 @@ static async update(id, userData = {}) {
       return [];
     }
   }
+  
 }
 
 export default User;

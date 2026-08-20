@@ -8,7 +8,6 @@ import User from '../models/Utilisateur.js';
 import { pool } from '../config/db.js';
 import NotificationService from '../services/NotificationService.js';
 import PreferenceUtilisateur from '../models/PreferencesUtilisateur.js';
-import Profile from '../models/Profile.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -49,6 +48,17 @@ async function getQuartierFromCoordinates(longitude, latitude) {
     if (res && res.length > 0) {
       const address = res[0];
       console.log('📍 Adresse complète trouvée:', address);
+      console.log("========== ADDRESS ==========");
+console.log(JSON.stringify(address, null, 2));
+console.log("city:", address.city);
+console.log("town:", address.town);
+console.log("village:", address.village);
+console.log("municipality:", address.municipality);
+console.log("county:", address.county);
+console.log("stateDistrict:", address.stateDistrict);
+console.log("suburb:", address.suburb);
+console.log("neighbourhood:", address.neighbourhood);
+console.log("formattedAddress:", address.formattedAddress);
       
       // ========== EXTRACTION DU QUARTIER ==========
       let quartier = null;
@@ -1274,12 +1284,7 @@ async getProprietesEnFonctionDeAgence(req, res) {
     try {
       const { id_propriete } = req.params;
 
-      const propriete = await Propriete.findById(id_propriete); 
-
-      console.log("La proprieté est :=======================================> ", propriete.id_utilisateur);
-      
-      const avatarProprietaire =  await Profile.getAvatarByUserId(propriete.id_utilisateur);
-      console.log('URL avatar: ', avatarProprietaire)
+      const propriete = await Propriete.findById(id_propriete);
 
       if (!propriete) {
         return res.status(404).json({
@@ -1298,7 +1303,6 @@ async getProprietesEnFonctionDeAgence(req, res) {
       // Ajouter les URLs complètes pour les médias
       const proprieteWithUrls = {
         ...propriete,
-        avatarProprietaire,
         media: propriete.media.map(mediaItem => ({
           ...mediaItem,
           url: `${req.protocol}://${req.get('host')}/uploads/properties/${mediaItem.url}`

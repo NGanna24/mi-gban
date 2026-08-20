@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf','image/HEIF','image/heic'];
   if (allowedTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
@@ -296,7 +296,7 @@ export const AgentDemandeController = {
       connection.release();
     }
   },
-
+ 
   // Obtenir ma demande
   async getMyDemand(req, res) {
     try {

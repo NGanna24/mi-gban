@@ -120,7 +120,7 @@ static async create(req, res) {
     console.error('❌ Erreur création réservation *****:', error);
     res.status(500).json({ 
       success: false,
-      message: 'Erreur lors de la création de la réservation.',
+      message: 'Une erreur est survenue. Changez de créneau ou réessayez plus tard.',
       error: error.message 
     });
   }

@@ -74,7 +74,7 @@ class Reservation {
       }
 
       const propriete = proprieteRows[0];
-      if (propriete.statut !== 'disponible') {
+      if (propriete.statut == 'vendu'  && propriete.statut == 'loué') {
         throw new Error('Cette propriété n\'est plus disponible pour réservation');
       }
 
@@ -327,7 +327,7 @@ static async findById(id_reservation) {
       const [reservedSlots] = await pool.execute(
         `SELECT heure_visite FROM Reservation 
          WHERE id_propriete = ? 
-         AND date_visite = ? 
+         AND date_visite = ?  
          AND statut = 'confirme'`,
         [id_propriete, date_visite]
       );
@@ -599,7 +599,14 @@ static async updateStatus(id_reservation, statut, message_agent = null) {
       
       // ✅ Médias
       media: this.media,
-      media_principal: this.media_principal
+      media_principal: this.media_principal,
+
+          // ✅ AJOUTER LES TOKENS POUR LES NOTIFICATIONS
+    utilisateur_token: this.utilisateur_token,
+    proprietaire_token: this.proprietaire_token,
+    visiteur_token: this.visiteur_token,
+    expo_push_token_visiteur: this.expo_push_token_visiteur,
+    expo_push_token_proprietaire: this.expo_push_token_proprietaire
     };
   }
 }

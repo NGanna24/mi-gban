@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { pool, initDataBase } from './config/db.js';
 import ProprieteRouter from './routes/proprieteRouter.js';
 import reservationRoutes from './routes/reservations.js';
+import contratRoutes from './routes/contratRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import paiementRoutes from './routes/paiementsRoutes.js';
@@ -16,15 +17,18 @@ import agenceRoutes from './routes/agenceRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import alertesRoute from './routes/alertesRoute.js';
 import agentRoutes from './routes/agentRoutes.js';
-import  publiciteRouter from './routes/PubliciteRouter.js';
+import  publiciteRouter from './routes/PubliciteRouter.js'; 
+import NotificationService from './services/NotificationService.js';
+
 // Dans votre app.js principal
+
 import PreferenceUtilisateurRoutes from './routes/PreferenceUtilisateurRoutes.js';
 import { createUploadDirs, cleanOrphanedFiles } from './middlewares/upload.js';
 import multer from 'multer';    
 
 //o k Mondesir  ==================== CONFIGURATION ENVIRONNEMENT ====================
 dotenv.config();
- 
+  
 const app = express();
 
 // Résolution __dirname pour les modules ES
@@ -277,6 +281,7 @@ app.get('/health', async (req, res) => {
                 '/api/profile', 
                 '/api/reservations',
                 '/api/paiements', 
+                '/api/contrats',
                 '/api/recherche',
                 '/health',
                 '/api/test-uploads'
@@ -362,12 +367,13 @@ app.delete('/api/cleanup-orphaned-files', async (req, res) => {
 app.use('/api/proprietes', ProprieteRouter);
 app.use('/api/agence', agenceRoutes); 
 app.use('/api/agent', agentRoutes);
+app.use('/api/contrats', contratRoutes);
 app.use('/api/publicites', publiciteRouter);
 
 // Routes pour l'authentification des utilisateurs
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authRoutes); 
 app.use('/api/favoris',favorisRoute); 
-app.use('/api/alertes', alertesRoute);
+app.use('/api/alertes', alertesRoute); 
 
 // Routes pour la gestion des profils utilisateur
 app.use('/api/profile', profileRoutes);
@@ -476,6 +482,19 @@ app.use((req, res) => {
         ]
     });
 });
+
+
+
+/**
+ * Vérification automatique au démarrage du serveur
+ */
+const startAutoCheck = async () => {
+  console.log('🚀 [SERVER] Lancement de la vérification automatique...');
+  
+};
+
+// Démarrer
+startAutoCheck();
 
 // ==================== DÉMARRAGE DU SERVEUR ====================
 

@@ -22,7 +22,7 @@ class Notification {
       console.log('📝 Création notification:', { 
         id_utilisateur, 
         titre: titre?.substring(0, 30) || 'Sans titre',
-        type,
+        type, 
         hasMetadata: !!metadata
       });
 

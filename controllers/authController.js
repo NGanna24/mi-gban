@@ -2,6 +2,7 @@ import { pool } from "../config/db.js";
 import jwt from "jsonwebtoken";
 import emailService from "../services/emailService.js";
 import User from '../models/Utilisateur.js';
+import Profile from "../models/Profile.js";
 
 // Durée de validité du token JWT (30 jours pour les tests)
 const JWT_EXPIRES_IN = '30d';
@@ -40,7 +41,7 @@ export const authController = {
     }
   },
 
-  /**
+  /** 
    * INSCRIPTION d'un nouvel utilisateur - AVEC MOT DE PASSE (4 chiffres)
    */
   async register(req, res) { 
@@ -195,6 +196,10 @@ export const authController = {
       
       console.log('✅ Login réussi - Token généré pour:', user.id);
 
+      // recuperation de l'avatar de l'utilisateur avec la methode getAvatarByUserId du profile
+      const avatar = await Profile.getAvatarByUserId(user.id);
+      console.log('🔍 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAavatar récupéré pour ID:', user.id, 'Avatar:', avatar);
+
       res.json({
         success: true,
         message: 'Connexion réussie',
@@ -206,7 +211,8 @@ export const authController = {
           role: user.role,
           est_actif: user.est_actif,
           date_inscription: user.date_inscription,
-          profile: user.profile
+          profile: user.profile,
+          avatar: avatar || null  // Ajouter l'avatar ici
         }
       });
 
@@ -924,6 +930,7 @@ async hasEmail(req, res) {
       console.log('👤 Get profile - User ID:', req.user.id);
       
       const user = await User.findByIdWithoutPassword(req.user.id);
+      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍 Profil récupéré:', user);
       
       if (!user) {
         console.log('❌ Utilisateur non trouvé pour getProfile ID:', req.user.id);

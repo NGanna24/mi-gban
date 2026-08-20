@@ -110,7 +110,7 @@ class AgentDemande {
     }
   }
 
-  /**
+  /** 
    * Ajouter un document à une demande
    */
   static async addDocument(documentData) {

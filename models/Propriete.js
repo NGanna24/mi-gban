@@ -960,17 +960,6 @@ static async #formatProprieteAvecMedias(row) {
   }
 }
 
-  // // 🔧 Méthode privée pour mettre à jour les caractéristiques
-  // async #updateCaracteristiques(connection, nouvellesCaracteristiques) {
-  //   await connection.query(
-  //     'DELETE FROM Propriete_Caracteristique WHERE id_propriete = ?',
-  //     [this.id_propriete]
-  //   );
-
-  //   if (Object.keys(nouvellesCaracteristiques).length > 0) {
-  //     await Propriete.#insertCaracteristiques(connection, this.id_propriete, nouvellesCaracteristiques);
-  //   }
-  // } 
 
   // 🆕 Méthode pour ajouter/mettre à jour une caractéristique spécifique
   async setCaracteristique(nom, valeur) { 
@@ -1056,7 +1045,7 @@ static async #formatProprieteAvecMedias(row) {
   async getMedia() {
     this.media = await Media.findByPropertyId(this.id_propriete);
     return this.media;
-  }
+  } 
 
   async getMainMedia() {
     return await Media.findMainByPropertyId(this.id_propriete);

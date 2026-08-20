@@ -147,6 +147,27 @@ class Profile {
     }
   }
 
+ 
+  //  recuperation de l'avatar d'un utilisateur par son id_utilisateur
+  static async getAvatarByUserId(id_utilisateur) {
+    try {
+      const [rows] = await pool.execute(
+        'SELECT avatar FROM Profile WHERE id_utilisateur = ?',
+        [id_utilisateur]
+      );
+      
+      if (rows.length > 0) {
+        return rows[0].avatar;
+      }
+      
+      return null;
+
+    } catch (error) {
+      console.error('❌ Erreur récupération avatar:', error);
+      throw error;
+    }
+  }
+
   /**
    * Met à jour un profil - VERSION CORRIGÉE
    */
@@ -308,7 +329,7 @@ class Profile {
   }
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Met à jour uniquement l'avatar
+   *  Met à jour uniquement l'avatar
    */
 // Dans votre modèle Profile - MODIFIER
 static async updateAvatar(id_utilisateur, avatarPath) {
@@ -332,9 +353,9 @@ static async updateAvatar(id_utilisateur, avatarPath) {
     throw error;
   }
 }
-
+ 
   /**
-   * ✅ NOUVELLE MÉTHODE : Supprime l'ancien fichier avatar s'il existe
+   *  Supprime l'ancien fichier avatar s'il existe
    */
   static async deleteOldAvatarFile(avatarPath) {
     try {
@@ -356,7 +377,7 @@ static async updateAvatar(id_utilisateur, avatarPath) {
   }
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Nettoie l'avatar existant avant mise à jour
+   *  Nettoie l'avatar existant avant mise à jour
    */
   static async cleanAndUpdateAvatar(id_utilisateur, newAvatarPath) {
     try {
@@ -378,7 +399,7 @@ static async updateAvatar(id_utilisateur, avatarPath) {
   }
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Vérifie l'état de la table Profile
+   *  Vérifie l'état de la table Profile
    */
   static async checkTableHealth() {
     try {

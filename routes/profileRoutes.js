@@ -45,4 +45,22 @@ router.delete('/avatar', profileController.deleteAvatar);
 // Vérifier la santé du système d'upload
 router.get('/upload-health', profileController.checkUploadHealth);
 
+
+
+
+// ✅ REFRESH AVATAR - Rafraîchir l'avatar (générer un nouveau ou utiliser l'existant)
+router.post(
+  '/refresh-avatar',
+  profileController.refreshAvatar  // Rafraîchit l'avatar
+);
+
+// ✅ REFRESH AVATAR WITH UPLOAD - Rafraîchir avec un nouveau fichier
+router.post(
+  '/refresh-avatar-upload',
+  uploadAvatar,                    // Middleware multer pour l'upload
+  handleUploadErrors,             // Gestion des erreurs multer
+  validateFilePresence,           // Validation de la présence du fichier
+  profileController.refreshAvatarWithUpload  // Rafraîchit avec upload
+);
+
 export default router; 

@@ -1,133 +1,25 @@
 import { pool } from '../config/db.js';
 import { Expo } from 'expo-server-sdk';
 import Notification from '../models/Notification.js';
-import Propriete from '../models/Propriete.js';
-import User from '../models/Utilisateur.js';
+import Propriete from '../models/Propriete.js';  // ✅ AJOUTER CELLE-CI
+import User from '../models/Utilisateur.js';     // ✅ AJOUTER CELLE-CI (si utilisée)
 
 // ============================================================================
 // INITIALISATION EXPO
 // ============================================================================
 
 const expo = new Expo({
+  // Optionnel: timeout en ms 
   accessToken: process.env.EXPO_ACCESS_TOKEN,
-  useFcmV1: true
+  useFcmV1: true // Utilise FCM v1 (recommandé)
 });
 
 // ============================================================================
-// FONCTIONS DE VÉRIFICATION DES PRÉFÉRENCES
+// FONCTIONS DE NOTIFICATION PUSH EXPO
 // ============================================================================
 
-/**
- * Vérifie si un utilisateur a activé les notifications dans ses préférences
- */
-const userHasNotificationsEnabled = async (userId) => {
-  try {
-    const [results] = await pool.execute(
-      `SELECT preferences 
-       FROM Profile 
-       WHERE id_utilisateur = ?`,
-      [userId]
-    );
-    
-    if (results.length === 0) {
-      return true; // Par défaut, les notifications sont activées
-    }
-    
-    let preferences = results[0].preferences;
-    
-    if (typeof preferences === 'string') {
-      try {
-        preferences = JSON.parse(preferences);
-      } catch (e) {
-        return true;
-      }
-    }
-    
-    return preferences?.notifications !== false;
-    
-  } catch (error) {
-    console.error('❌ Erreur vérification préférences:', error);
-    return true;
-  }
-};
-
-/**
- * Récupère les followers d'une agence avec notifications activées
- */
-const getFollowersWithNotifications = async (agenceId) => {
-  try {
-    console.log(`📊 Récupération des followers de l'agence ${agenceId}...`);
-    
-    const query = `
-      SELECT 
-        u.id_utilisateur,
-        u.fullname,
-        u.expo_push_token,
-        u.est_actif,
-        s.notifications_actives,
-        s.date_suivi,
-        p.preferences
-      FROM SuiviAgence s
-      JOIN Utilisateur u ON s.id_suiveur = u.id_utilisateur
-      LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-      WHERE s.id_suivi_utilisateur = ?
-      AND s.notifications_actives = TRUE
-      AND u.est_actif = TRUE
-      AND u.expo_push_token IS NOT NULL
-      AND u.expo_push_token != ''
-    `;
-    
-    const [followers] = await pool.execute(query, [agenceId]);
-    
-    // Filtrer ceux qui ont activé les notifications dans leurs préférences
-    const filteredFollowers = followers.filter(follower => {
-      let notificationsEnabled = true;
-      
-      if (follower.preferences) {
-        try {
-          const preferences = typeof follower.preferences === 'string' 
-            ? JSON.parse(follower.preferences) 
-            : follower.preferences;
-          
-          if (preferences.notifications === false) {
-            notificationsEnabled = false;
-          }
-        } catch (e) {
-          console.error(`Erreur parsing préférences pour ${follower.id_utilisateur}:`, e);
-        }
-      }
-      
-      return notificationsEnabled;
-    });
-    
-    console.log(`👥 ${filteredFollowers.length}/${followers.length} followers avec notifications activées`);
-    return filteredFollowers;
-    
-  } catch (error) {
-    console.error('❌ Erreur récupération followers:', error);
-    return [];
-  }
-};
-
 // ============================================================================
-// FONCTIONS DE NETTOYAGE DES TOKENS INVALIDES
-// ============================================================================
-
-const cleanupInvalidToken = async (userId) => {
-  try {
-    console.log(`🧹 Nettoyage du token invalide pour l'utilisateur ${userId}`);
-    await pool.execute(
-      'UPDATE Utilisateur SET expo_push_token = NULL WHERE id_utilisateur = ?',
-      [userId]
-    );
-    console.log(`✅ Token nettoyé pour l'utilisateur ${userId}`);
-  } catch (error) {
-    console.error('❌ Erreur lors du nettoyage du token:', error);
-  }
-};
-
-// ============================================================================
-// FONCTIONS D'ENVOI DE NOTIFICATIONS AVEC RETRY
+// AJOUTER CETTE FONCTION DE GESTION D'ERREURS RÉSEAU
 // ============================================================================
 
 /**
@@ -140,8 +32,9 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
     try {
       console.log(`📤 Tentative ${attempt}/${maxRetries} d'envoi de notification...`);
       
+      // Ajouter un délai entre les tentatives (backoff exponentiel)
       if (attempt > 1) {
-        const delay = Math.pow(2, attempt) * 1000;
+        const delay = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
         console.log(`⏳ Attente de ${delay}ms avant nouvelle tentative...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -153,6 +46,7 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
         return result;
       }
       
+      // Si c'est une erreur de token, on ne réessaie pas
       if (result.code === 'DeviceNotRegistered' || result.code === 'InvalidCredentials') {
         console.log(`❌ Erreur irrécupérable: ${result.code}`);
         return result;
@@ -164,11 +58,13 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
       console.error(`❌ Erreur tentative ${attempt}:`, error.message);
       lastError = error.message;
       
+      // Si c'est une erreur réseau, on continue
       if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
         console.log(`🔄 Erreur réseau, nouvelle tentative...`);
         continue;
       }
       
+      // Autres erreurs, on arrête
       break;
     }
   }
@@ -180,11 +76,13 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
   };
 };
 
-/**
- * Envoie une notification push via Expo
- */
+// ============================================================================
+// MODIFIER LA FONCTION sendPushNotification POUR MIEUX GÉRER LES ERREURS RÉSEAU
+// ============================================================================
+
 const sendPushNotification = async (expoPushToken, title, body, data = {}, userId = null, notificationType = 'system') => {
   try {
+    // 1. Vérifier que le token est valide pour Expo
     if (!expoPushToken) {
       console.error('❌ Token manquant'); 
       return { success: false, error: 'Token manquant' };
@@ -195,6 +93,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
       return { success: false, error: 'Token Expo invalide' };
     }
 
+    // 2. Construire le message Expo
     const message = {
       to: expoPushToken,
       sound: 'default',
@@ -212,8 +111,9 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
       body: body.substring(0, 50) + '...'
     });
 
+    // 3. Envoyer via Expo avec un timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
     
     try {
       const tickets = await expo.sendPushNotificationsAsync([message], { signal: controller.signal });
@@ -222,9 +122,11 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
 
       console.log('📨 Ticket Expo reçu:', ticket.status);
 
+      // 4. Analyser la réponse
       if (ticket.status === 'ok') {
         console.log('✅ Notification envoyée avec succès via Expo');
         
+        // 5. Sauvegarder en BDD si userId fourni
         if (userId) {
           try {
             await Notification.create({
@@ -248,6 +150,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
         };
 
       } else {
+        // Gestion des erreurs Expo
         console.error('❌ Erreur Expo:', ticket.message, ticket.details);
         
         if (ticket.details?.error === 'DeviceNotRegistered' || 
@@ -255,6 +158,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
           
           console.error('🔧 Action requise: Supprimer ce token de la base de données');
           
+          // Nettoyer le token invalide
           if (userId) {
             await cleanupInvalidToken(userId);
           }
@@ -276,6 +180,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
     } catch (fetchError) {
       clearTimeout(timeoutId);
       
+      // Gestion spécifique des erreurs réseau
       if (fetchError.name === 'AbortError') {
         console.error('⏱️ Timeout de la requête Expo');
         return { 
@@ -302,6 +207,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
   } catch (error) {
     console.error('❌ Erreur générale envoi notification:', error);
     
+    // Détecter les erreurs réseau
     if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
       return { 
         success: false, 
@@ -320,14 +226,95 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
 };
 
 // ============================================================================
-// FONCTIONS D'ENVOI EN LOT
+// AJOUT de cette  FONCTION DE NETTOYAGE DES TOKENS INVALIDES
 // ============================================================================
+
+const cleanupInvalidToken = async (userId) => {
+  try {
+    console.log(`🧹 Nettoyage du token invalide pour l'utilisateur ${userId}`);
+    await pool.execute(
+      'UPDATE Utilisateur SET expo_push_token = NULL WHERE id_utilisateur = ?',
+      [userId]
+    );
+    console.log(`✅ Token nettoyé pour l'utilisateur ${userId}`);
+  } catch (error) {
+    console.error('❌ Erreur lors du nettoyage du token:', error);
+  }
+};
+
+// ============================================================================
+//  notifyVisitorReservationRequest POUR UTILISER LE RETRY
+// ============================================================================
+
+const notifyVisitorReservationRequest = async (reservation) => {
+  try {
+    console.log('🔔 Notification confirmation demande au visiteur:', reservation);
+    
+    const reservationId = reservation.id_reservation || reservation;
+    const reservationDetails = await getReservationDetails(reservationId);
+    
+    if (!reservationDetails) {
+      console.log('❌ Détails réservation non trouvés');
+      return { success: false, error: 'Réservation non trouvée' };
+    }
+
+    const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
+
+    if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
+      return { success: false, error: 'Token visiteur invalide' };
+    }
+
+    const title = " Demande envoyée !";
+    const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
+    
+    const data = {
+      type: 'RESERVATION_REQUEST_SENT',
+      reservationId: reservationDetails.id_reservation,
+      propertyId: reservationDetails.id_propriete,
+      status: reservationDetails.statut,
+      action: 'view_reservation',
+      screen: 'reservation-details',
+      timestamp: new Date().toISOString(),
+      role: 'visitor' 
+    };
+
+    // UTILISER LA VERSION AVEC RETRY
+    const result = await sendPushNotificationWithRetry(
+      visiteur_token, 
+      title, 
+      body, 
+      data,
+      reservationDetails.id_utilisateur,
+      'reservation_request_sent',
+      3 // 3 tentatives max
+    );
+
+    if (result.success) {
+      console.log(`✅ Notification envoyée au visiteur ${visiteur_nom}`);
+    } else if (result.retryable) {
+      console.log(`⚠️ Erreur réseau pour ${visiteur_nom}, tentative en arrière-plan...`);
+      // On peut logger pour un retry ultérieur
+    } else {
+      console.log(`❌ Échec notification pour ${visiteur_nom}:`, result.error);
+    }
+    
+    return result;
+
+  } catch (error) {
+    console.error('❌ Erreur notification visiteur:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+
 
 /**
  * Envoie des notifications en lot via Expo
  */
 const sendBulkNotifications = async (notifications) => {
   try {
+    // Filtrer et préparer les messages valides
     const messages = notifications
       .filter(notification => {
         const isValid = Expo.isExpoPushToken(notification.expoPushToken);
@@ -339,7 +326,7 @@ const sendBulkNotifications = async (notifications) => {
       .map(notification => ({
         to: notification.expoPushToken,
         sound: 'default',
-        title: notification.title || notification.titre,
+        title: notification.title || notification.titre, // Support les deux formats
         body: notification.body,
         data: notification.data || {},
         channelId: 'alertes-immobilieres',
@@ -353,6 +340,7 @@ const sendBulkNotifications = async (notifications) => {
 
     console.log(`📤 Envoi de ${messages.length} notifications en lot...`);
 
+    // Découper en chunks (Expo recommande max 100)
     const chunks = expo.chunkPushNotifications(messages);
     const allTickets = [];
 
@@ -361,23 +349,24 @@ const sendBulkNotifications = async (notifications) => {
         console.log(`🔄 Envoi lot ${i + 1}/${chunks.length} (${chunks[i].length} notifications)...`);
         const tickets = await expo.sendPushNotificationsAsync(chunks[i]);
         allTickets.push(...tickets);
-        console.log(`✅ Lot ${i + 1} envoyé`);
+        console.log(` Lot ${i + 1} envoyé`);
       } catch (error) {
-        console.error(`❌ Erreur lot ${i + 1}:`, error);
+        console.error(`Erreur lot ${i + 1}:`, error);
+        // Continuer avec les lots suivants
       }
     }
 
-    console.log(`📨 ${allTickets.length} tickets reçus au total`);
+    console.log(` ${allTickets.length} tickets reçus au total`);
     return allTickets;
 
   } catch (error) {
-    console.error('❌ Erreur envoi notifications en lot:', error);
+    console.error(' Erreur envoi notifications en lot:', error);
     throw error;
   }
 };
 
 /**
- * Envoie des notifications en masse via Expo
+ *  les notifications en masse
  */
 const sendBulkNotificationsExpo = async (tokens, notification) => {
   try {
@@ -385,8 +374,9 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     let validTokens = 0;
     let invalidTokens = 0;
     
-    console.log(`📊 Préparation de ${tokens.length} notifications...`);
+    console.log(`Préparation de ${tokens.length} notifications...`);
 
+    // Préparer les messages pour chaque token valide
     for (const token of tokens) {
       if (!token) {
         invalidTokens++;
@@ -412,13 +402,14 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
       validTokens++;
     }
     
-    console.log(`✅ ${validTokens} tokens valides, ${invalidTokens} tokens invalides`);
+    console.log(` ${validTokens} tokens valides, ${invalidTokens} tokens invalides`);
     
     if (messages.length === 0) {
-      console.log('⚠️ Aucun message valide à envoyer');
+      console.log(' Aucun message valide à envoyer');
       return [];
     }
     
+    // Envoi par chunks (limitation Expo)
     const chunks = expo.chunkPushNotifications(messages);
     const tickets = [];
     let totalSent = 0;
@@ -428,26 +419,28 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       try {
-        console.log(`📤 Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
+        console.log(`Envoi du lot ${i + 1}/${chunks.length} (${chunk.length} notifications)...`);
         const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
         tickets.push(...ticketChunk);
         totalSent += chunk.length;
         
-        console.log(`✅ Lot ${i + 1} envoyé avec succès`);
+        console.log(` Lot ${i + 1} envoyé avec succès`);
         
+        // Petite pause entre les lots pour éviter le rate limiting
         if (i < chunks.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
-        console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
+        console.error(` Erreur envoi lot ${i + 1}:`, error);
       }
     }
     
-    console.log(`📨 ${totalSent} notifications envoyées au total`);
+    console.log(` ${totalSent} notifications envoyées au total`);
+    
     return tickets;
     
   } catch (error) {
-    console.error('❌ Erreur envoi notifications:', error);
+    console.error('Erreur envoi notifications:', error);
     throw error;
   }
 };
@@ -459,9 +452,10 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
 /**
  * Récupère tous les utilisateurs actifs
  */
+
 const getAllUsers = async () => {
   try {
-    console.log('📊 Récupération de tous les utilisateurs actifs...');
+    console.log(' Récupération de tous les utilisateurs actifs...');
     
     const query = `
       SELECT id_utilisateur 
@@ -470,11 +464,12 @@ const getAllUsers = async () => {
     `;
     
     const [users] = await pool.execute(query);
-    console.log(`👥 ${users.length} utilisateurs actifs trouvés`);
+    console.log(` ${users.length} utilisateurs actifs trouvés`);
+    
     return users;
     
   } catch (error) {
-    console.error('❌ Erreur récupération utilisateurs:', error);
+    console.error('Erreur récupération utilisateurs:', error);
     return [];
   }
 };
@@ -482,6 +477,24 @@ const getAllUsers = async () => {
 /**
  * Récupère le profil utilisateur
  */
+
+// const getUserProfile = async (id_utilisateur) => {
+//   try {
+//     const [users] = await pool.execute(
+//       `SELECT u.id_utilisateur, u.fullname, p.avatar, p.ville as ville_utilisateur
+//        FROM Utilisateur u
+//        LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+//        WHERE u.id_utilisateur = ?`,
+//       [id_utilisateur]
+//     );
+    
+//     return users.length > 0 ? users[0] : null;
+//   } catch (error) {
+//     console.error('Erreur récupération profil utilisateur:', error);
+//     return null;
+//   }
+// };
+// NotificationService.js
 const getUserProfile = async (id_utilisateur) => {
   try {
     const [users] = await pool.execute(
@@ -490,8 +503,7 @@ const getUserProfile = async (id_utilisateur) => {
         u.fullname, 
         u.expo_push_token,  
         p.avatar, 
-        p.ville as ville_utilisateur,
-        p.preferences
+        p.ville as ville_utilisateur
        FROM Utilisateur u
        LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
        WHERE u.id_utilisateur = ?`,
@@ -500,61 +512,10 @@ const getUserProfile = async (id_utilisateur) => {
     
     return users.length > 0 ? users[0] : null;
   } catch (error) {
-    console.error('❌ Erreur récupération profil utilisateur:', error);
+    console.error('Erreur récupération profil utilisateur:', error);
     return null;
   }
 };
-
-/**
- * Récupère tous les tokens push des utilisateurs actifs avec notifications activées
- */
-const getAllUserPushTokens = async () => {
-  try {
-    const query = `
-      SELECT 
-        u.expo_push_token,
-        p.preferences
-      FROM Utilisateur u
-      LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-      WHERE u.expo_push_token IS NOT NULL 
-      AND u.expo_push_token != ''
-      AND u.est_actif = TRUE
-    `;
-    
-    const [users] = await pool.execute(query);
-    
-    const tokens = users
-      .filter(user => {
-        let notificationsEnabled = true;
-        
-        if (user.preferences) {
-          try {
-            const preferences = typeof user.preferences === 'string' 
-              ? JSON.parse(user.preferences) 
-              : user.preferences;
-            
-            if (preferences.notifications === false) {
-              notificationsEnabled = false;
-            }
-          } catch (e) {
-            console.error(`Erreur parsing préférences:`, e);
-          }
-        }
-        
-        return notificationsEnabled;
-      })
-      .map(user => user.expo_push_token)
-      .filter(token => token !== null);
-    
-    console.log(`📱 ${tokens.length} tokens Expo récupérés (avec notifications activées)`);
-    return tokens;
-    
-  } catch (error) {
-    console.error('❌ Erreur récupération tokens:', error);
-    return [];
-  }
-};
-
 /**
  * Formate le type de propriété en français
  */
@@ -607,14 +568,15 @@ const getCaracteristiquesPrincipales = async (id_propriete) => {
 
     return caracteristiques;
   } catch (error) {
-    console.error('❌ Erreur récupération caractéristiques:', error);
+    console.error('Erreur récupération caractéristiques:', error);
     return [];
   }
 };
 
 /**
  * Formate les caractéristiques pour l'affichage
- */
+*/
+
 const formatCaracteristiques = (caracteristiques) => {
   const formatted = [];
   
@@ -644,12 +606,12 @@ const formatCaracteristiques = (caracteristiques) => {
     }
   });
   
-  return formatted.slice(0, 3).join(' • ');
+  return formatted.slice(0, 3).join(' • '); // Maximum 3 caractéristiques
 };
 
 /**
- * Calcule la similarité entre deux chaînes
- */
+* Calcule la similarité entre deux chaînes
+*/
 const calculateSimilarity = (str1, str2) => {
   if (str1 === str2) return 1.0;
   if (!str1 || !str2) return 0.0;
@@ -671,12 +633,12 @@ const calculateSimilarity = (str1, str2) => {
   return matches / maxLength;
 };
 
-/**
- * Vérifie si une propriété correspond aux critères d'une alerte
- */
+// Modifiez propertyMatchesCriteria pour utiliser les champs individuels :
 const propertyMatchesCriteria = (property, alert) => {
+  // console.log('La propriété à vérifier *****************************************:', {property, alert});
   try {
-    console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, alert);
+    
+    console.log(` Vérification critères pour propriété ${property.id_propriete}:`, alert);
 
     const normalizeText = (text) => {
       if (!text) return '';
@@ -689,6 +651,7 @@ const propertyMatchesCriteria = (property, alert) => {
         .trim();
     };
 
+    //  CRITÈRE OBLIGATOIRE: La ville
     if (alert.ville && property.ville) {
       const villeRecherche = normalizeText(alert.ville);
       const villePropriete = normalizeText(property.ville);
@@ -698,25 +661,28 @@ const propertyMatchesCriteria = (property, alert) => {
                         calculateSimilarity(villePropriete, villeRecherche) > 0.7;
       
       if (!villeMatch) {
-        console.log(`❌ Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
+        console.log(`Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
         return false;
       }
-      console.log(`✅ Ville correspond: ${alert.ville} vs ${property.ville}`);
+      console.log(` Ville correspond: ${alert.ville} vs ${property.ville}`);
     } else {
-      console.log(`⚠️ Aucune ville spécifiée dans les critères`);
+      console.log(` Aucune ville spécifiée dans les critères`);
       return false;
     }
 
+    // Vérifier le type de transaction
     if (alert.type_transaction && alert.type_transaction !== property.type_transaction) {
-      console.log(`❌ Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
+      console.log(` Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
       return false;
     }
 
+    // Vérifier le type de propriété
     if (alert.type_propriete && alert.type_propriete !== property.type_propriete) {
-      console.log(`❌ Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
+      console.log(` Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
       return false;
     }
 
+    // Vérifier le quartier
     if (alert.quartier && property.quartier) {
       const quartierRecherche = normalizeText(alert.quartier);
       const quartierPropriete = normalizeText(property.quartier);
@@ -726,43 +692,45 @@ const propertyMatchesCriteria = (property, alert) => {
                            calculateSimilarity(quartierPropriete, quartierRecherche) > 0.6;
       
       if (!quartierMatch) {
-        console.log(`❌ Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
+        console.log(` Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
         return false;
       }
     }
 
+    // Vérifier le prix minimum
     if (alert.prix_min && property.prix) {
       const prixMin = parseFloat(alert.prix_min);
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete < prixMin) {
-        console.log(`❌ Prix trop bas: ${prixPropriete} < ${prixMin}`);
+        console.log(` Prix trop bas: ${prixPropriete} < ${prixMin}`);
         return false;
       }
     }
 
+    // Vérifier le prix maximum
     if (alert.prix_max && property.prix) {
       const prixMax = parseFloat(alert.prix_max);
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete > prixMax) {
-        console.log(`❌ Prix trop élevé: ${prixPropriete} > ${prixMax}`);
+        console.log(` Prix trop élevé: ${prixPropriete} > ${prixMax}`);
         return false;
       }
     }
 
-    console.log(`✅ PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
+    console.log(` PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
     return true;
 
   } catch (error) {
-    console.error('❌ Erreur vérification critères:', error);
+    console.error(' Erreur vérification critères:', error);
     return false;
   }
 };
 
 /**
- * Formate la date pour les notifications
- */
+* Formate la date pour les notifications
+*/
 const formatDateForDisplay = (dateString) => {
   try {
     const date = new Date(dateString);
@@ -778,6 +746,153 @@ const formatDateForDisplay = (dateString) => {
 };
 
 /**
+ * Prépare la notification PERSONNALISÉE pour une alerte
+ */
+const preparePersonalizedAlertNotification = async (property, userAlert, userProfile) => {
+  try {
+    const caracteristiques = await getCaracteristiquesPrincipales(property.id_propriete);
+    const caracteristiquesFormatees = formatCaracteristiques(caracteristiques);
+    
+    const prixFormate = formatPropertyPrice(property);
+    const typeProprieteFormate = formatTypePropriete(property.type_propriete);
+    
+    const criteres = typeof userAlert.criteres === 'string' ? 
+      JSON.parse(userAlert.criteres) : userAlert.criteres;
+    
+    const nomUtilisateur = userProfile?.fullname?.split(' ')[0] || '';
+    
+    let messageBody = '';
+    
+    if (nomUtilisateur) {
+      messageBody = `Bonnes nouvelles ${nomUtilisateur} ! \n`;
+    } else {
+      messageBody = `Bonnes nouvelles ! \n`;
+    }
+    
+    messageBody += `Un${typeProprieteFormate.startsWith('a') || typeProprieteFormate.startsWith('e') || typeProprieteFormate.startsWith('i') || typeProprieteFormate.startsWith('o') || typeProprieteFormate.startsWith('u') || typeProprieteFormate.startsWith('h') ? ' ' : 'e '}${typeProprieteFormate} `;
+    
+    if (caracteristiquesFormatees) {
+      messageBody += `avec ${caracteristiquesFormatees} `;
+    }
+    
+    messageBody += `à ${prixFormate} `;
+    
+    if (property.quartier && property.ville) {
+      messageBody += `à ${property.quartier}, ${property.ville}`;
+    } else if (property.ville) {
+      messageBody += `à ${property.ville}`;
+    }
+    
+    messageBody += `\n\n🏃‍♂️ Vite, venez voir !`;
+    
+    let title = " Votre alerte immobilière !";
+    if (nomUtilisateur) {
+      title = ` ${nomUtilisateur}, une propriété vous attend !`;
+    }
+
+    return {
+      title: title,
+      body: messageBody,
+      data: {
+        type: 'ALERT_MATCH',
+        propertyId: property.id_propriete,
+        slug: property.slug,
+        alertId: userAlert.id_recherche,
+        screen: 'property-details',
+        timestamp: new Date().toISOString()
+      },
+      priority: 'high'
+    };
+
+  } catch (error) {
+    console.error(' Erreur préparation notification personnalisée:', error);
+    
+    return {
+      title: " Votre alerte immobilière !",
+      body: `Nouvelle propriété correspondant à vos critères à ${property.ville || 'Abidjan'}`,
+      data: {
+        type: 'ALERT_MATCH',
+        propertyId: property.id_propriete,
+        slug: property.slug,
+        alertId: userAlert.id_recherche,
+        screen: 'property-details',
+        timestamp: new Date().toISOString()
+      },
+      priority: 'high'
+    };
+  }
+};
+
+/**
+ * Récupère toutes les alertes actives
+ */
+const getActiveAlerts = async () => {
+  try {
+    console.log(' Récupération des alertes actives...');
+    
+    const query = `
+      SELECT 
+        a.id_alerte, 
+        a.id_utilisateur, 
+        a.nom_alerte, 
+        a.type_propriete, 
+        a.type_transaction, 
+        a.ville, 
+        a.quartier, 
+        a.prix_min,
+        a.prix_max,
+        a.surface_min,
+        a.surface_max,
+        a.nbr_chambres_min,
+        a.nbr_salles_bain_min,
+        a.equipements,
+        u.fullname,
+        u.expo_push_token
+      FROM Alerte a
+      JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
+      WHERE a.est_alerte_active = 1
+      AND u.est_actif = 1
+      AND u.expo_push_token IS NOT NULL
+      AND u.expo_push_token != ''
+    `;
+    
+    const [alerts] = await pool.execute(query);
+    console.log(` ${alerts.length} alertes actives trouvées`);
+    
+    return alerts;
+    
+  } catch (error) {
+    console.error(' Erreur récupération alertes:', error);
+    return [];
+  }
+};
+
+/** 
+ * Récupère tous les tokens push des utilisateurs actifs
+ */
+const getAllUserPushTokens = async () => {
+  try {
+    const query = `
+      SELECT expo_push_token 
+      FROM Utilisateur 
+      WHERE expo_push_token IS NOT NULL 
+      AND expo_push_token != ''
+      AND est_actif = TRUE
+    `;
+    
+    const [users] = await pool.execute(query);
+    const tokens = users.map(user => user.expo_push_token).filter(token => token !== null);
+    
+    console.log(`${tokens.length} tokens Expo récupérés`);
+    return tokens;
+    
+  } catch (error) {
+    console.error(' Erreur récupération tokens:', error);
+    return [];
+  }
+};
+
+/** 
  * Formate le prix pour l'affichage
  */
 const formatPropertyPrice = (property) => {
@@ -810,7 +925,7 @@ const prepareNewPropertyNotification = (property) => {
     : property.titre;
   
   return {
-    title: "🏠 Nouvelle propriété disponible!",
+    title: "Nouvelle propriété disponible!",
     body: `${titreTronque} - ${prixFormate} à ${property.ville || 'Abidjan'}`,
     data: {
       type: 'NEW_PROPERTY',
@@ -823,153 +938,32 @@ const prepareNewPropertyNotification = (property) => {
 };
 
 /**
- * Prépare la notification PERSONNALISÉE pour une alerte
+ * Sauvegarde les notifications en BDD
  */
-const preparePersonalizedAlertNotification = async (property, userAlert, userProfile) => {
+const saveNotificationsToDatabase = async (property) => {
   try {
-    const caracteristiques = await getCaracteristiquesPrincipales(property.id_propriete);
-    const caracteristiquesFormatees = formatCaracteristiques(caracteristiques);
+    console.log(' Sauvegarde notifications en BDD...');
     
-    const prixFormate = formatPropertyPrice(property);
-    const typeProprieteFormate = formatTypePropriete(property.type_propriete);
+    const allUsers = await getAllUsers();
     
-    const nomUtilisateur = userProfile?.fullname?.split(' ')[0] || '';
-    
-    let messageBody = '';
-    
-    if (nomUtilisateur) {
-      messageBody = `Bonnes nouvelles ${nomUtilisateur} ! \n`;
-    } else {
-      messageBody = `Bonnes nouvelles ! \n`;
-    }
-    
-    messageBody += `Un${typeProprieteFormate.startsWith('a') || typeProprieteFormate.startsWith('e') || typeProprieteFormate.startsWith('i') || typeProprieteFormate.startsWith('o') || typeProprieteFormate.startsWith('u') || typeProprieteFormate.startsWith('h') ? ' ' : 'e '}${typeProprieteFormate} `;
-    
-    if (caracteristiquesFormatees) {
-      messageBody += `avec ${caracteristiquesFormatees} `;
-    }
-    
-    messageBody += `à ${prixFormate} `;
-    
-    if (property.quartier && property.ville) {
-      messageBody += `à ${property.quartier}, ${property.ville}`;
-    } else if (property.ville) {
-      messageBody += `à ${property.ville}`;
-    }
-    
-    messageBody += `\n\n🏃‍♂️ Vite, venez voir !`;
-    
-    let title = "🔔 Votre alerte immobilière !";
-    if (nomUtilisateur) {
-      title = `🔔 ${nomUtilisateur}, une propriété vous attend !`;
-    }
-
-    return {
-      title: title,
-      body: messageBody,
-      data: {
-        type: 'ALERT_MATCH',
-        propertyId: property.id_propriete,
-        slug: property.slug,
-        alertId: userAlert.id_recherche,
-        screen: 'property-details',
-        timestamp: new Date().toISOString()
-      },
-      priority: 'high'
-    };
-
-  } catch (error) {
-    console.error('❌ Erreur préparation notification personnalisée:', error);
-    
-    return {
-      title: "🔔 Votre alerte immobilière !",
-      body: `Nouvelle propriété correspondant à vos critères à ${property.ville || 'Abidjan'}`,
-      data: {
-        type: 'ALERT_MATCH',
-        propertyId: property.id_propriete,
-        slug: property.slug,
-        alertId: userAlert.id_recherche,
-        screen: 'property-details',
-        timestamp: new Date().toISOString()
-      },
-      priority: 'high'
-    };
-  }
-};
-
-/**
- * Récupère toutes les alertes actives
- */
-const getActiveAlerts = async () => {
-  try {
-    console.log('📊 Récupération des alertes actives...');
-    
-    const query = `
-      SELECT 
-        a.id_alerte, 
-        a.id_utilisateur, 
-        a.nom_alerte, 
-        a.type_propriete, 
-        a.type_transaction, 
-        a.ville, 
-        a.quartier, 
-        a.prix_min,
-        a.prix_max,
-        a.surface_min,
-        a.surface_max,
-        a.nbr_chambres_min,
-        a.nbr_salles_bain_min,
-        a.equipements,
-        u.fullname,
-        u.expo_push_token,
-        p.preferences
-      FROM Alerte a
-      JOIN Utilisateur u ON a.id_utilisateur = u.id_utilisateur
-      LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-      WHERE a.est_alerte_active = 1
-      AND u.est_actif = 1
-      AND u.expo_push_token IS NOT NULL
-      AND u.expo_push_token != ''
-    `;
-    
-    const [alerts] = await pool.execute(query);
-    console.log(`👥 ${alerts.length} alertes actives trouvées`);
-    
-    return alerts;
-    
-  } catch (error) {
-    console.error('❌ Erreur récupération alertes:', error);
-    return [];
-  }
-};
-
-/**
- * Sauvegarde les notifications en BDD pour les followers uniquement
- */
-const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
-  try {
-    console.log('💾 Sauvegarde notifications en BDD pour les followers...');
-    
-    if (!followers || followers.length === 0) {
-      console.log('⚠️ Aucun follower à notifier en BDD');
+    if (!allUsers || allUsers.length === 0) {
+      console.log(' Aucun utilisateur à notifier en BDD');
       return { saved: false, count: 0, errors: 0, total: 0 };
     }
+
+    console.log(` ${allUsers.length} utilisateurs à notifier en BDD`);
 
     let savedCount = 0;
     let errorCount = 0;
 
-    for (const follower of followers) {
+    for (const user of allUsers) {
       try {
-        if (follower.id_utilisateur === property.id_utilisateur) {
-          continue;
-        }
-        
         const prixFormate = formatPropertyPrice(property);
         const message = `${property.titre} - ${prixFormate} à ${property.ville || 'Abidjan'}`;
         
         await Notification.create({
-          id_utilisateur: follower.id_utilisateur,
-          titre: "🏠 Nouvelle propriété disponible!",
+          id_utilisateur: user.id_utilisateur,
+          titre: " Nouvelle propriété disponible!",
           message: message,
           type: 'nouvelle_propriete',
           metadata: JSON.stringify({
@@ -987,22 +981,22 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
         savedCount++;
 
       } catch (userError) {
-        console.error(`❌ Erreur utilisateur ${follower.id_utilisateur}:`, userError.message);
+        console.error(` Erreur utilisateur ${user.id_utilisateur}:`, userError.message);
         errorCount++;
       }
     }
 
-    console.log(`💾 BDD: ${savedCount}/${followers.length} réussites, ${errorCount} erreurs`);
+    console.log(` BDD: ${savedCount}/${allUsers.length} réussites, ${errorCount} erreurs`);
     
     return {
       saved: savedCount > 0,
       count: savedCount,
       errors: errorCount,
-      total: followers.length
+      total: allUsers.length
     };
 
   } catch (error) {
-    console.error('❌ Erreur sauvegarde BDD:', error);
+    console.error(' Erreur sauvegarde BDD:', error);
     return {
       saved: false,
       count: 0,
@@ -1018,11 +1012,11 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
  */
 const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, messagePersonnalise) => {
   try {
-    console.log(`💾 Sauvegarde notification alerte pour utilisateur ${userId}...`);
+    console.log(` Sauvegarde notification alerte pour utilisateur ${userId}...`);
 
     const notificationId = await Notification.create({
       id_utilisateur: userId,
-      titre: "🔔 Votre alerte immobilière!",
+      titre: " Votre alerte immobilière!",
       message: messagePersonnalise,
       type: 'nouvelle_propriete',
       metadata: JSON.stringify({
@@ -1038,11 +1032,11 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
       })
     });
 
-    console.log(`✅ Notification alerte ${notificationId} sauvegardée`);
+    console.log(` Notification alerte ${notificationId} sauvegardée`);
     return notificationId;
     
   } catch (error) {
-    console.error('❌ Erreur sauvegarde notification alerte:', error);
+    console.error(' Erreur sauvegarde notification alerte:', error);
     return null;
   }
 };
@@ -1053,14 +1047,15 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
 const notifySingleUser = async (userToken, notification) => {
   try {
     if (!userToken || !Expo.isExpoPushToken(userToken)) {
-      console.log('⚠️ Token utilisateur invalide');
+      console.log(' Token utilisateur invalide');
       return { success: false, message: 'Token invalide' };
     }
 
+    // S'assurer que le format est correct pour Expo
     const message = {
       to: userToken,
       sound: 'default',
-      title: notification.title || notification.titre,
+      title: notification.title || notification.titre, // Support les deux
       body: notification.body,
       data: notification.data || {},
       channelId: notification.channelId || 'default',
@@ -1071,31 +1066,36 @@ const notifySingleUser = async (userToken, notification) => {
     const ticket = tickets[0];
     
     if (ticket.status === 'ok') {
-      console.log(`✅ Notification personnalisée envoyée: ${notification.title || notification.titre}`);
+      console.log(` Notification personnalisée envoyée: ${notification.title || notification.titre}`);
       return { success: true, ticket: ticket };
     } else {
-      console.log(`❌ Échec envoi notification: ${ticket.message}`);
+      console.log(` Échec envoi notification: ${ticket.message}`);
       return { success: false, message: ticket.message };
     }
     
   } catch (error) {
-    console.error('❌ Erreur notification utilisateur:', error);
+    console.error(' Erreur notification utilisateur:', error);
     return { success: false, message: error.message };
   }
 };
 
 /**
  * Notifie les utilisateurs dont les alertes correspondent
- * (exclut le propriétaire de la propriété et vérifie les préférences)
  */
 const notifyUsersWithMatchingAlerts = async (property) => {
   try {
-    console.log('🔔 NOTIFICATION ALERTES PERSONNALISÉES');
-    
+    console.log(' NOTIFICATION ALERTES PERSONNALISÉES');
+    console.log(' Propriété:', {
+      id: property.id_propriete,
+      titre: property.titre,
+      type: property.type_propriete,
+      ville: property.ville
+    });
+
     const activeAlerts = await getActiveAlerts();
     
     if (activeAlerts.length === 0) {
-      console.log('ℹ️ Aucune alerte active trouvée');
+      console.log(' Aucune alerte active trouvée');
       return {
         success: true,
         message: 'Aucune alerte active',
@@ -1104,7 +1104,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
       };
     }
 
-    console.log(`🔍 Vérification de ${activeAlerts.length} alertes...`);
+    console.log(` Vérification de ${activeAlerts.length} alertes...`);
 
     let matchesFound = 0;
     let notificationsSent = 0;
@@ -1112,52 +1112,26 @@ const notifyUsersWithMatchingAlerts = async (property) => {
 
     for (const alert of activeAlerts) {
       try {
-        // Exclure le propriétaire de la propriété
-        if (alert.id_utilisateur === property.id_utilisateur) {
-          console.log(`⏭️ Alerte ${alert.id_alerte} ignorée (propriétaire de la propriété)`);
-          continue;
-        }
+        console.log(` Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
         
-        // Vérifier les préférences de notification
-        let notificationsEnabled = true;
-        if (alert.preferences) {
-          try {
-            const preferences = typeof alert.preferences === 'string' 
-              ? JSON.parse(alert.preferences) 
-              : alert.preferences;
-            
-            if (preferences.notifications === false) {
-              notificationsEnabled = false;
-            }
-          } catch (e) {
-            console.error(`Erreur parsing préférences pour ${alert.id_utilisateur}:`, e);
-          }
-        }
-        
-        if (!notificationsEnabled) {
-          console.log(`⏭️ Alerte ${alert.id_alerte} ignorée (notifications désactivées)`);
-          continue;
-        }
-        
-        console.log(`🔍 Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
-        
+        // Passez l'objet alert complet, pas alert.criteres
         const matches = propertyMatchesCriteria(property, alert);
         
         if (matches) {
-          console.log(`✅ ALERTE ${alert.id_alerte} CORRESPOND!`);
+          console.log(` ALERTE ${alert.id_alerte} CORRESPOND!`);
           matchesFound++;
           usersToNotify.push(alert);
         }
         
       } catch (alertError) {
-        console.error(`❌ Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
+        console.error(` Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
       }
     }
 
-    console.log(`📊 RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
+    console.log(` RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
 
     if (usersToNotify.length > 0) {
-      console.log(`📨 Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
+      console.log(`Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
       
       for (const userAlert of usersToNotify) {
         try {
@@ -1170,25 +1144,25 @@ const notifyUsersWithMatchingAlerts = async (property) => {
           
           if (result.success) {
             notificationsSent++;
-            console.log(`✅ Notification envoyée à ${userAlert.fullname}`);
+            console.log(` Notification envoyée à ${userAlert.fullname}`);
             
             await saveAlertNotificationToDatabase(
               userAlert.id_utilisateur, 
               property, 
-              userAlert.nom_alerte,
+              userAlert.nom_alerte, // nom_alerte, pas nom_recherche
               notification.body
             );
             
           } else {
-            console.log(`⚠️ Échec notification pour ${userAlert.fullname}:`, result.message);
+            console.log(` Échec notification pour ${userAlert.fullname}:`, result.message);
           }
           
         } catch (userError) {
-          console.error(`❌ Erreur notification utilisateur:`, userError.message);
+          console.error(` Erreur notification utilisateur:`, userError.message);
         }
       }
     } else {
-      console.log('ℹ️ Aucun utilisateur à notifier');
+      console.log(' Aucun utilisateur à notifier');
     }
 
     return {
@@ -1199,7 +1173,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification alertes:', error);
+    console.error(' ERREUR notification alertes:', error);
     
     return {
       success: false,
@@ -1212,49 +1186,34 @@ const notifyUsersWithMatchingAlerts = async (property) => {
 };
 
 /**
- * Notifie tous les utilisateurs d'une nouvelle propriété 
- * (seulement ceux qui suivent l'agence et ont activé les notifications)
- */
+* Notifie tous les utilisateurs d'une nouvelle propriété 
+*/
+
 const notifyAllUsersAboutNewProperty = async (property) => {
   try {
-    console.log('📢 NOTIFICATION NOUVELLE PROPRIÉTÉ');
-    console.log('Propriété:', {
+    console.log(' NOTIFICATION NOUVELLE PROPRIÉTÉ');
+    console.log(' Propriété:', {
       id: property.id_propriete,
       titre: property.titre,
       prix: property.prix,
       ville: property.ville
     });
 
-    // Récupérer les followers avec notifications activées
-    const followers = await getFollowersWithNotifications(property.id_utilisateur);
-    
-    console.log(`👥 ${followers.length} followers à notifier`);
-
-    // Filtrer les tokens valides (exclure le propriétaire)
-    const validTokens = followers
-      .filter(f => {
-        if (f.id_utilisateur === property.id_utilisateur) {
-          console.log(`⏭️ Exclu: propriétaire ${f.fullname}`);
-          return false;
-        }
-        return f.expo_push_token && Expo.isExpoPushToken(f.expo_push_token);
-      })
-      .map(f => f.expo_push_token);
-
-    console.log(`📱 ${validTokens.length} tokens valides pour les notifications`);
-
-    // Envoyer les notifications push
-    let pushTickets = [];
+    // 1. Récupérer tous les tokens
+    const tokens = await getAllUserPushTokens();
     const notificationContent = prepareNewPropertyNotification(property);
-    
-    if (validTokens.length > 0) {
-      pushTickets = await sendBulkNotificationsExpo(validTokens, notificationContent);
+
+    // 2. Envoyer les notifications push (limité à 1000 pour éviter timeout)
+    let pushTickets = [];
+    if (tokens.length > 0) {
+      const limitedTokens = tokens.slice(0, 1000);
+      pushTickets = await sendBulkNotificationsExpo(limitedTokens, notificationContent);
     }
 
-    // Sauvegarder en BDD pour les followers
-    const bddResult = await saveNotificationsToDatabaseForFollowers(property, followers);
+    // 3. Sauvegarder en BDD
+    const bddResult = await saveNotificationsToDatabase(property);
 
-    // Notifications par alertes (exclut le propriétaire et vérifie les préférences)
+    // 4. Notifications par alertes
     const alertResult = await notifyUsersWithMatchingAlerts(property);
 
     const result = {
@@ -1265,15 +1224,15 @@ const notifyAllUsersAboutNewProperty = async (property) => {
       alerts_checked: alertResult.alerts_checked,
       alerts_matched: alertResult.alerts_matched,
       alerts_notified: alertResult.users_notified,
-      total_users: followers.length,
+      total_users: bddResult.total,
       total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    console.log('✅ NOTIFICATION COMPLÈTE TERMINÉE:', result);
+    // console.log(' NOTIFICATION COMPLÈTE TERMINÉE:', result);
     return result;
 
   } catch (error) {
-    console.error('❌ ERREUR NOTIFICATION:', error);
+    console.error(' ERREUR NOTIFICATION:', error);
     
     return {
       success: false,
@@ -1285,18 +1244,10 @@ const notifyAllUsersAboutNewProperty = async (property) => {
   }
 };
 
-// ============================================================================
-// NOTIFICATIONS POUR LES RÉSERVATIONS
-// ============================================================================
-
-/**
- * Récupère les détails d'une réservation
- */
-// services/NotificationService.js - CORRECTION de getReservationDetails
-
+// // NOTIFICATION SERVICE - FONCTION getReservationDetails CORRIGÉE
 const getReservationDetails = async (id_reservation) => {
   try {
-    console.log('📊 Récupération détails réservation ID:', id_reservation);
+    console.log(' Récupération détails réservation ID:', id_reservation);
     
     const query = `
       SELECT 
@@ -1308,14 +1259,19 @@ const getReservationDetails = async (id_reservation) => {
         p.type_transaction,
         p.id_utilisateur AS id_proprietaire,
         
+        -- Informations du visiteur
         u.fullname AS visiteur_nom,
         u.telephone AS visiteur_telephone,
-        u.expo_push_token AS visiteur_token,
+        u.expo_push_token,  -- ← PAS D'ALIAS, on garde le nom original
         u.id_utilisateur,
         
+        -- Informations du propriétaire
         prop_u.fullname AS proprietaire_nom,
         prop_u.telephone AS proprietaire_telephone,
-        prop_u.expo_push_token AS proprietaire_token
+        prop_u.expo_push_token AS proprietaire_token,  -- ← Alias pour le propriétaire
+        
+        -- Pour récupérer aussi le token du propriétaire sous un autre nom
+        prop_u.expo_push_token AS prop_token
         
       FROM Reservation r
       JOIN Propriete p ON r.id_propriete = p.id_propriete
@@ -1327,54 +1283,35 @@ const getReservationDetails = async (id_reservation) => {
     const [reservations] = await pool.execute(query, [id_reservation]);
 
     if (reservations.length === 0) {
-      console.log('⚠️ Aucune réservation trouvée');
+      console.log(' Aucune réservation trouvée');
       return null;
     } 
 
     const reservation = reservations[0];
     
-    // LOG DE DEBUG
-    console.log('🔍 Données récupérées:', {
-      id_reservation: reservation.id_reservation,
-      visiteur_nom: reservation.visiteur_nom,
-      visiteur_token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
-      proprietaire_nom: reservation.proprietaire_nom,
-      proprietaire_token: reservation.proprietaire_token ? 'PRÉSENT' : 'ABSENT',
-      propriete_titre: reservation.propriete_titre,
-      date_visite: reservation.date_visite,
-      heure_visite: reservation.heure_visite
-    });
+    // 👇 CORRECTION CRITIQUE: S'assurer que les tokens sont bien récupérés
+    // Le token du visiteur est dans "expo_push_token" (sans alias)
+    // Le token du propriétaire est dans "proprietaire_token" ou "prop_token"
     
-    // ✅ FALLBACK - Si les noms sont vides
-    if (!reservation.visiteur_nom || reservation.visiteur_nom === '') {
-      console.warn('⚠️ visiteur_nom est vide, utilisation de "Visiteur"');
-      reservation.visiteur_nom = 'Visiteur';
-    }
+    const visiteur_token = reservation.expo_push_token;  // ← Utilise le nom original
+    const proprietaire_token = reservation.proprietaire_token || reservation.prop_token;
     
-    if (!reservation.proprietaire_nom || reservation.proprietaire_nom === '') {
-      console.warn('⚠️ proprietaire_nom est vide, utilisation de "Propriétaire"');
-      reservation.proprietaire_nom = 'Propriétaire';
-    }
-
-    // ✅ S'assurer que les tokens sont des strings valides
-    const visiteur_token = reservation.visiteur_token || null;
-    const proprietaire_token = reservation.proprietaire_token || null;
-
-    console.log('🔑 Tokens:', {
+    console.log('🔑 Tokens après correction:', {
       visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT',
-      proprietaire_token: proprietaire_token ? 'PRÉSENT' : 'ABSENT'
+      proprietaire_token: proprietaire_token ? 'PRÉSENT' : 'ABSENT',
+      raw_visiteur: reservation.expo_push_token ? reservation.expo_push_token.substring(0, 20) + '...' : null,
+      raw_proprietaire: proprietaire_token ? proprietaire_token.substring(0, 20) + '...' : null
     });
 
+    // Ajouter les tokens à l'objet retourné
     return {
       ...reservation,
       visiteur_token: visiteur_token,
-      proprietaire_token: proprietaire_token,
-      visiteur_nom: reservation.visiteur_nom || 'Visiteur',
-      proprietaire_nom: reservation.proprietaire_nom || 'Propriétaire'
+      proprietaire_token: proprietaire_token
     };
 
   } catch (error) {
-    console.error('❌ Erreur récupération détails réservation:', error);
+    console.error('Erreur récupération détails réservation:', error);
     return null;
   }
 };
@@ -1384,10 +1321,11 @@ const getReservationDetails = async (id_reservation) => {
  */
 const notifyOwnerNewReservation = async (reservation) => {
   try {
-    console.log('🔔 Notification nouvelle réservation au propriétaire');
+    console.log('Notification nouvelle réservation au propriétaire');
     
+    // Vérifier si visiteur = propriétaire
     if (reservation.id_utilisateur === reservation.id_proprietaire) {
-      console.log('⚠️ Visiteur est propriétaire, notification annulée');
+      console.log('Visiteur est propriétaire, notification annulée');
       return { 
         success: true, 
         skipped: true, 
@@ -1397,7 +1335,7 @@ const notifyOwnerNewReservation = async (reservation) => {
 
     const reservationDetails = await getReservationDetails(reservation.id_reservation);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log('Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
@@ -1405,12 +1343,12 @@ const notifyOwnerNewReservation = async (reservation) => {
     const visiteur_nom = reservationDetails.visiteur_nom || 'Un visiteur';
 
     if (!proprietaire_token || !Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`⚠️ Token propriétaire invalide pour ${proprietaire_nom}`);
+      console.log(`Token propriétaire invalide pour ${proprietaire_nom}`);
       return { success: false, error: 'Token propriétaire invalide' };
     }
 
     const formattedDate = formatDateForDisplay(date_visite);
-    const title = "🔔 Nouvelle demande de visite";
+    const title = "Nouvelle demande de visite";
     const body = `${visiteur_nom} souhaite visiter "${propriete_titre}" le ${formattedDate} à ${heure_visite}`;
     
     const data = {
@@ -1419,7 +1357,7 @@ const notifyOwnerNewReservation = async (reservation) => {
       propertyId: reservation.id_propriete,
       status: reservation.statut,
       action: 'view_reservation',
-      screen: 'reservation-details',
+      screen: '',
       timestamp: new Date().toISOString(),
       role: 'owner' 
     };
@@ -1433,108 +1371,94 @@ const notifyOwnerNewReservation = async (reservation) => {
       'reservation'
     );
 
-    console.log(`✅ Notification envoyée au propriétaire ${proprietaire_nom}`);
+    console.log(` Notification envoyée au propriétaire ${proprietaire_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification propriétaire:', error);
+    console.error(' Erreur notification propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
+
+// const notifyVisitorReservationRequest = async (reservation) => {
+//   try {
+//     console.log(' Notification confirmation demande au visiteur:', reservation);
+    
+//     // Si reservation est un objet, extraire l'ID
+//     const reservationId = reservation.id_reservation || reservation;
+    
+//     const reservationDetails = await getReservationDetails(reservationId);
+    
+//     if (!reservationDetails) {
+//       console.log('Détails réservation non trouvés');
+//       return { success: false, error: 'Réservation non trouvée' };
+//     }
+
+//     const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
+
+//     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
+//       console.log(`Token visiteur invalide pour ${visiteur_nom}`);
+//       return { success: false, error: 'Token visiteur invalide' };
+//     }
+
+//     const title = " Demande envoyée !";
+//     const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
+    
+//     const data = {
+//       type: 'RESERVATION_REQUEST_SENT',
+//       reservationId: reservationDetails.id_reservation,
+//       propertyId: reservationDetails.id_propriete,
+//       status: reservationDetails.statut,
+//       action: 'view_reservation',
+//       screen: 'reservation-details',
+//       timestamp: new Date().toISOString(),
+//       role: 'visitor' 
+//     };
+
+//     const result = await sendPushNotification(
+//       visiteur_token, 
+//       title, 
+//       body, 
+//       data,
+//       reservationDetails.id_utilisateur,
+//       'reservation_request_sent'
+//     );
+
+//     console.log(` Notification envoyée au visiteur ${visiteur_nom}`);
+//     return result;
+
+//   } catch (error) {
+//     console.error('Erreur notification visiteur:', error);
+//     return { success: false, error: error.message };
+//   }
+// };
 
 /**
- * Notification confirmation demande au visiteur
+ * Notification de changement de statut
  */
-const notifyVisitorReservationRequest = async (reservation) => {
-  try {
-    console.log('Notification confirmation demande au visiteur:', reservation);
-    
-    const reservationId = reservation.id_reservation || reservation;
-    const reservationDetails = await getReservationDetails(reservationId);
-    
-    if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
-      return { success: false, error: 'Réservation non trouvée' };
-    }
-
-    const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
-
-    if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
-      return { success: false, error: 'Token visiteur invalide' };
-    }
-
-    const title = "Demande envoyée !";
-    const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
-    
-    const data = {
-      type: 'RESERVATION_REQUEST_SENT',
-      reservationId: reservationDetails.id_reservation,
-      propertyId: reservationDetails.id_propriete,
-      status: reservationDetails.statut,
-      action: 'view_reservation',
-      screen: 'reservation-details',
-      timestamp: new Date().toISOString(),
-      role: 'visitor' 
-    };
-
-    const result = await sendPushNotificationWithRetry(
-      visiteur_token, 
-      title, 
-      body, 
-      data,
-      reservationDetails.id_utilisateur,
-      'reservation_request_sent',
-      3
-    );
-
-    if (result.success) {
-      console.log(`✅ Notification envoyée au visiteur ${visiteur_nom}`);
-    } else if (result.retryable) {
-      console.log(`⚠️ Erreur réseau pour ${visiteur_nom}, tentative en arrière-plan...`);
-    } else {
-      console.log(`❌ Échec notification pour ${visiteur_nom}:`, result.error);
-    }
-    
-    return result;
-
-  } catch (error) {
-    console.error('❌ Erreur notification visiteur:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// services/NotificationService.js - CORRECTION de notifyReservationStatusChange
-
 const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, message = null) => {
   try {
     console.log('=== NOTIFICATION CHANGEMENT STATUT ===');
-    console.log('Paramètres reçus:', { reservation, oldStatus, newStatus, message });
     
     let reservationDetails;
     let reservationId;
 
-    // ✅ Gérer les différents formats de réservation
     if (typeof reservation === 'number' || typeof reservation === 'string') {
-      reservationId = parseInt(reservation);
+      reservationId = reservation;
       reservationDetails = await getReservationDetails(reservationId);
     } else if (reservation && reservation.id_reservation) {
-      reservationId = reservation.id_reservation;
       reservationDetails = reservation;
-    } else if (reservation && reservation.id) {
-      reservationId = reservation.id;
-      reservationDetails = await getReservationDetails(reservationId);
+      reservationId = reservationDetails.id_reservation;
     } else {
-      console.error('❌ Format de réservation invalide:', reservation);
+      console.error(' Format de réservation invalide');
       return { success: false, error: 'Format de réservation invalide' };
     }
 
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés pour ID:', reservationId);
+      console.log('Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
-    // ✅ Extraire les données avec des fallbacks
     const { 
       proprietaire_token, 
       proprietaire_nom, 
@@ -1547,63 +1471,58 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       heure_visite 
     } = reservationDetails;
 
-    console.log('🔑 Données extraites:', {
+    console.log('🔑 Tokens disponibles:', {
       proprietaire_token: proprietaire_token ? 'PRÉSENT' : 'ABSENT',
-      proprietaire_nom: proprietaire_nom || 'Non défini',
-      visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT',
-      visiteur_nom: visiteur_nom || 'Non défini',
-      propriete_titre: propriete_titre || 'Non défini',
-      date_visite: date_visite || 'Non définie',
-      heure_visite: heure_visite || 'Non définie'
+      visiteur_token: visiteur_token ? 'PRÉSENT' : 'ABSENT'
     });
 
-    // ✅ Définir les messages de statut
+    // Messages personnalisés selon le statut
     const statusMessages = {
       'confirme': {
         owner: {
-          title: "✅ Visite confirmée",
-          body: `La visite de ${visiteur_nom || 'Visiteur'} pour "${propriete_titre || 'la propriété'}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
+          title: " Visite confirmée",
+          body: `La visite de ${visiteur_nom} pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         },
         visitor: {
-          title: "✅ Visite confirmée !",
-          body: `Votre visite pour "${propriete_titre || 'la propriété'}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
+          title: "Visite confirmée !",
+          body: `Votre visite pour "${propriete_titre}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         }
       },
       'annule': {
         owner: {
-          title: "🚫 Visite annulée",
-          body: `La visite pour "${propriete_titre || 'la propriété'}" le ${formatDateForDisplay(date_visite)} a été annulée. ${message || ''}`,
+          title: "Visite annulée",
+          body: `La visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)} a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         },
         visitor: {
-          title: "🚫 Visite annulée",
-          body: `Votre visite pour "${propriete_titre || 'la propriété'}" a été annulée. ${message || ''}`,
+          title: "Visite annulée",
+          body: `Votre visite pour "${propriete_titre}" a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         }
       },
       'termine': {
         owner: {
-          title: "✅ Visite terminée",
-          body: `La visite pour "${propriete_titre || 'la propriété'}" s'est terminée le ${formatDateForDisplay(date_visite)}.`,
+          title: "Visite terminée",
+          body: `La visite pour "${propriete_titre}" s'est terminée le ${formatDateForDisplay(date_visite)}.`,
           type: 'reservation_completed'
         },
         visitor: {
-          title: "✅ Visite terminée",
-          body: `Merci d'avoir visité "${propriete_titre || 'la propriété'}" ! N'hésitez pas à laisser un avis.`,
+          title: "Visite terminée",
+          body: `Merci d'avoir visité "${propriete_titre}" ! N'hésitez pas à laisser un avis.`,
           type: 'reservation_completed'
         }
       },
       'refuse': {
         owner: {
-          title: "❌ Visite refusée",
-          body: `Vous avez refusé la visite pour "${propriete_titre || 'la propriété'}" le ${formatDateForDisplay(date_visite)}. ${message || ''}`,
+          title: "Visite refusée",
+          body: `Vous avez refusé la visite pour "${propriete_titre}" le ${formatDateForDisplay(date_visite)}. ${message || ''}`,
           type: 'reservation_refused'
         },
         visitor: {
-          title: "❌ Visite refusée",
-          body: `Votre demande de visite pour "${propriete_titre || 'la propriété'}" a été refusée. ${message || 'Le propriétaire a refusé votre demande.'}`,
+          title: "Visite refusée",
+          body: `Votre demande de visite pour "${propriete_titre}" a été refusée. ${message || 'Le propriétaire a refusé votre demande.'}`,
           type: 'reservation_refused'
         }
       }
@@ -1611,52 +1530,72 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
     const messages = statusMessages[newStatus];
     if (!messages) {
-      console.log(`⚠️ Statut non géré: ${newStatus}`);
+      console.log(`Statut non géré: ${newStatus}`);
       return { success: false, error: 'Statut non géré' };
     }
 
     const results = [];
     const sentNotifications = [];
 
-    // ✅ Notification au PROPRIÉTAIRE
-    if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`👤 Notification au propriétaire ${proprietaire_nom || 'Propriétaire'}...`);
-      
-      const ownerData = {
-        type: 'RESERVATION_STATUS_CHANGE',
-        reservationId: reservationId,
-        propertyId: reservationDetails.id_propriete,
-        oldStatus: oldStatus,
-        newStatus: newStatus,
-        action: 'view_reservation', 
-        screen: 'reservation-details',
-        timestamp: new Date().toISOString(),
-        role: 'owner',
-      };
+// Dans notifyReservationStatusChange, MODIFIEZ ownerData et visitorData :
 
-      const ownerResult = await sendPushNotification(
-        proprietaire_token,
-        messages.owner.title,
-        messages.owner.body,
-        ownerData,
-        id_proprietaire,
-        messages.owner.type
-      );
+// 1. Notification au PROPRIÉTAIRE
+if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
+  console.log(`Notification au propriétaire ${proprietaire_nom}...`);
+  
+  const ownerData = {
+    type: 'RESERVATION_STATUS_CHANGE',
+    reservationId: reservationId,
+    propertyId: reservationDetails.id_propriete,
+    oldStatus: oldStatus,
+    newStatus: newStatus,
+    action: 'view_reservation', 
+    screen: 'reservation-details',
+    timestamp: new Date().toISOString(),
+    role: 'owner', // 👈 C'est BIEN présent ici
+  };
 
-      results.push({
-        to: 'owner',
-        success: ownerResult.success,
-        name: proprietaire_nom || 'Propriétaire'
-      });
+  const ownerResult = await sendPushNotification(
+    proprietaire_token,
+    messages.owner.title,
+    messages.owner.body,
+    ownerData, // 👈 On passe ownerData avec le rôle
+    id_proprietaire,
+    messages.owner.type
+  );
+  // ...
+}
 
-      if (ownerResult.success) sentNotifications.push('owner');
-    } else {
-      console.log(`⚠️ Token propriétaire invalide ou absent pour ${proprietaire_nom || 'Propriétaire'}`);
-    }
+// 2. Notification au VISITEUR
+if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
+  console.log(` Notification au visiteur ${visiteur_nom}...`);
+  
+  const visitorData = {
+    type: 'RESERVATION_STATUS_CHANGE',
+    reservationId: reservationId,
+    propertyId: reservationDetails.id_propriete,
+    oldStatus: oldStatus,
+    newStatus: newStatus,
+    action: 'view_reservation',
+    screen: 'reservation-details',
+    timestamp: new Date().toISOString(),
+    role: 'visitor', 
+  };
 
-    // ✅ Notification au VISITEUR
+  const visitorResult = await sendPushNotification(
+    visiteur_token,
+    messages.visitor.title,
+    messages.visitor.body,
+    visitorData, // 👈 On passe visitorData avec le rôle
+    id_utilisateur,
+    messages.visitor.type
+  );
+  // ...
+}
+
+    // 2. Notification au VISITEUR
     if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`👤 Notification au visiteur ${visiteur_nom || 'Visiteur'}...`);
+      console.log(` Notification au visiteur ${visiteur_nom}...`);
       
       const visitorData = {
         type: 'RESERVATION_STATUS_CHANGE',
@@ -1667,7 +1606,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
         action: 'view_reservation',
         screen: 'reservation-details',
         timestamp: new Date().toISOString(),
-        role: 'visitor',
+        role: 'visitor'
       };
 
       const visitorResult = await sendPushNotification(
@@ -1682,15 +1621,13 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       results.push({
         to: 'visitor',
         success: visitorResult.success,
-        name: visiteur_nom || 'Visiteur'
+        name: visiteur_nom
       });
 
       if (visitorResult.success) sentNotifications.push('visitor');
-    } else {
-      console.log(`⚠️ Token visiteur invalide ou absent pour ${visiteur_nom || 'Visiteur'}`);
     }
 
-    console.log(`📊 ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
+    console.log(` ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
     console.log('=== FIN NOTIFICATION ===');
 
     return {
@@ -1703,7 +1640,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification changement statut:', error);
+    console.error(' ERREUR notification changement statut:', error);
     
     return {
       success: false,
@@ -1721,14 +1658,14 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, proprietaire_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
@@ -1755,15 +1692,15 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       'owner_message'
     );
 
-    console.log(`✅ Message propriétaire envoyé à ${visiteur_nom}`);
+    console.log(` Message propriétaire envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification message propriétaire:', error);
+    console.error(' Erreur notification message propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
-
+ 
 /**
  * Notification rappel de visite (24h avant)
  */
@@ -1773,14 +1710,14 @@ const notifyVisitReminder = async (reservationId) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, propriete_titre, heure_visite } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
@@ -1806,14 +1743,17 @@ const notifyVisitReminder = async (reservationId) => {
       'visit_reminder'
     );
 
-    console.log(`✅ Rappel visite envoyé à ${visiteur_nom}`);
+    console.log(` Rappel visite envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification rappel visite:', error);
+    console.error(' Erreur notification rappel visite:', error);
     return { success: false, error: error.message };
   }
 };
+
+
+
 
 // ============================================================================
 // NOTIFICATIONS POUR LES CONTRATS
@@ -1826,22 +1766,16 @@ const notifyClientAboutNewContract = async (contrat, message = null) => {
   try {
     console.log('📄 Notification nouveau contrat au client:', contrat.id_contrat);
     
+    // Récupérer les infos du client
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
       console.log('⚠️ Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
-    // Vérifier les préférences
-    const notificationsEnabled = await userHasNotificationsEnabled(contrat.id_utilisateur);
-    if (!notificationsEnabled) {
-      console.log('⏭️ Client a désactivé les notifications');
-      return { success: true, skipped: true, reason: 'notifications_disabled' };
-    }
-
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "📄 Nouveau contrat disponible";
+    const title = "Nouveau contrat disponible";
     const body = message || `Un nouveau contrat pour "${propriete?.titre || 'la propriété'}" est prêt à être signé.`;
     
     const data = {
@@ -2118,6 +2052,7 @@ const notifyClientAboutContractRefusal = async (contrat, message = null) => {
  * Notifie le client que l'agent a annulé le contrat
  */
 const notifyClientAboutContractCancellation = async (contrat, message = null) => {
+
   try {
     console.log('🚫 Notification annulation contrat au client:', contrat.id_contrat);
     
@@ -2160,6 +2095,8 @@ const notifyClientAboutContractCancellation = async (contrat, message = null) =>
     return { success: false, error: error.message };
   }
 };
+
+
 
 /**
  * Notifie l'agent que le contrat a été envoyé au client
@@ -2211,6 +2148,7 @@ const notifyAgentAboutContractSent = async (contrat) => {
   }
 };
 
+
 /**
  * Notifie le client que l'agent a accepté le contrat (après signature)
  */
@@ -2260,6 +2198,10 @@ const notifyClientAboutContractAcceptedByAgent = async (contrat, message = null)
     return { success: false, error: error.message };
   }
 };
+
+
+
+
 
 /**
  * Notifie le client que l'agent a signé le contrat
@@ -2311,6 +2253,7 @@ const notifyClientAboutContractSignedByAgent = async (contrat) => {
   }
 };
 
+
 /**
  * Notifie l'agent que le contrat a été validé
  */
@@ -2361,8 +2304,10 @@ const notifyAgentAboutContractValidation = async (contrat) => {
   }
 };
 
+
+
 /**
- * Notifie l'agent que le contrat a été refusé par le client
+ * Notifie l'agent que le contrat a été refusé par le client (déjà existant mais avec retry)
  */
 const notifyAgentAboutContractRefusedByClient = async (contrat, message = null) => {
   try {
@@ -2410,6 +2355,8 @@ const notifyAgentAboutContractRefusedByClient = async (contrat, message = null) 
     return { success: false, error: error.message };
   }
 };
+
+
 
 /**
  * Notifie l'agent que le contrat a été terminé
@@ -2555,7 +2502,9 @@ const notifyClientAboutContractReminder = async (contrat, message = null) => {
     console.error('❌ Erreur notification client relance:', error);
     return { success: false, error: error.message };
   }
-};
+
+
+  // services/NotificationService.js - Ajoutez ces fonctions
 
 /**
  * Notifie l'agent qu'une demande de modification a été faite
@@ -2678,401 +2627,12 @@ const notifyClientAboutModificationRefused = async (contrat, message = null) => 
     console.error('❌ Erreur notification client refus:', error);
     return { success: false, error: error.message };
   }
-
-
-
-
-  
 };
 
 
-
-
-
+};
 // ============================================================================
-// SAUVEGARDE DES NOTIFICATIONS
-// ============================================================================
-
-const saveNotificationToDatabase = async (userId, title, message, type, metadata = {}) => {
-  try {
-    await pool.execute(
-      `INSERT INTO Notification (id_utilisateur, titre, message, type, metadata, date_creation)
-       VALUES (?, ?, ?, ?, ?, NOW())`,
-      [userId, title, message, type, JSON.stringify(metadata)]
-    );
-    return true;
-  } catch (error) {
-    console.error('❌ Erreur sauvegarde notification:', error);
-    return false;
-  }
-};
-
-// ============================================================================
-// NOUVEAU : SERVICE DE VÉRIFICATION AUTOMATIQUE DES CONTRATS
-// ============================================================================
-
-/**
- * Récupère tous les contrats actifs concernés
- */
-const getActiveContracts = async () => {
-  const [rows] = await pool.execute(
-    `SELECT c.*,
-            u.fullname as client_nom,
-            u.expo_push_token as client_token,
-            u.telephone as client_telephone,
-            u.email as client_email,
-            a.fullname as agent_nom,
-            a.expo_push_token as agent_token,
-            a.telephone as agent_telephone,
-            p.titre as propriete_titre
-     FROM Contrat c
-     JOIN Utilisateur u ON c.id_utilisateur = u.id_utilisateur
-     JOIN Utilisateur a ON c.id_agent = a.id_utilisateur
-     JOIN Propriete p ON c.id_propriete = p.id_propriete
-     WHERE c.statut = 'actif'
-     AND c.est_signe = 1
-     AND (c.type_contrat = 'location' OR c.mode_paiement = 'echelonne')`
-  );
-  
-  console.log(`📊 [NotificationService] ${rows.length} contrats actifs trouvés`);
-  return rows;
-};
-
-/**
- * Génère les échéances pour un contrat
- */
-const genererEcheances = async (contrat) => {
-  const details = typeof contrat.details_contrat === 'string' 
-    ? JSON.parse(contrat.details_contrat) 
-    : contrat.details_contrat;
-
-  let echeances = [];
-  const isLocation = contrat.type_contrat === 'location';
-
-  if (isLocation) {
-    const { dureeLocation, loyerMensuel, jourPaiement, dateDebut } = details;
-    
-    if (!dureeLocation || !loyerMensuel || !jourPaiement || !dateDebut) {
-      console.log(`⚠️ Données location incomplètes pour contrat ${contrat.id_contrat}`);
-      return [];
-    }
-
-    const dateDebutObj = new Date(dateDebut);
-    for (let i = 1; i <= dureeLocation; i++) {
-      const dateEcheance = new Date(dateDebutObj);
-      dateEcheance.setMonth(dateDebutObj.getMonth() + i);
-      dateEcheance.setDate(jourPaiement);
-      
-      echeances.push({
-        numero: i,
-        montant: loyerMensuel,
-        date_echeance: dateEcheance.toISOString(),
-        statut: 'en_attente',
-        date_rappel_envoye: null,
-        date_paiement: null
-      });
-    }
-
-  } else if (contrat.mode_paiement === 'echelonne') {
-    const { dureeVente, mensualites } = details;
-    
-    if (!dureeVente || !mensualites) {
-      console.log(`⚠️ Données vente incomplètes pour contrat ${contrat.id_contrat}`);
-      return [];
-    }
-
-    const dateDebutObj = new Date(contrat.date_signature);
-    dateDebutObj.setMonth(dateDebutObj.getMonth() + 1);
-
-    for (let i = 1; i <= dureeVente; i++) {
-      const dateEcheance = new Date(dateDebutObj);
-      dateEcheance.setMonth(dateDebutObj.getMonth() + (i - 1));
-      
-      echeances.push({
-        numero: i,
-        montant: mensualites,
-        date_echeance: dateEcheance.toISOString(),
-        statut: 'en_attente',
-        date_rappel_envoye: null,
-        date_paiement: null
-      });
-    }
-  }
-
-  if (echeances.length > 0) {
-    details.echeances = echeances;
-    details.total_echeances = echeances.length;
-    
-    await pool.execute(
-      'UPDATE Contrat SET details_contrat = ? WHERE id_contrat = ?',
-      [JSON.stringify(details), contrat.id_contrat]
-    );
-    
-    console.log(`✅ ${echeances.length} échéances générées pour contrat ${contrat.id_contrat}`);
-  }
-
-  return echeances;
-};
-
-/**
- * Met à jour le statut d'une échéance
- */
-const updateEcheanceStatus = async (idContrat, numeroEcheance, nouveauStatut) => {
-  try {
-    const [rows] = await pool.execute(
-      'SELECT details_contrat FROM Contrat WHERE id_contrat = ?',
-      [idContrat]
-    );
-    
-    if (rows.length === 0) return;
-
-    let details = rows[0].details_contrat;
-    if (typeof details === 'string') details = JSON.parse(details);
-    
-    const echeances = details.echeances || [];
-    const index = echeances.findIndex(e => e.numero === numeroEcheance);
-    
-    if (index === -1) return;
-
-    if (nouveauStatut === 'rappele') {
-      echeances[index].date_rappel_envoye = new Date().toISOString();
-    }
-    echeances[index].statut = nouveauStatut;
-
-    details.echeances = echeances;
-
-    await pool.execute(
-      'UPDATE Contrat SET details_contrat = ? WHERE id_contrat = ?',
-      [JSON.stringify(details), idContrat]
-    );
-  } catch (error) {
-    console.error(`❌ Erreur mise à jour échéance:`, error);
-  }
-};
-
-/**
- * Envoie un rappel au client (J-3)
- */
-const sendClientReminder = async (contrat, echeance, isLocation) => {
-  const dateEcheance = new Date(echeance.date_echeance).toLocaleDateString('fr-FR');
-  const mois = new Date(echeance.date_echeance).toLocaleString('fr-FR', { month: 'long', year: 'numeric' });
-  const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
-  const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
-
-  const title = isLocation ? '🔔 Rappel de loyer' : '🔔 Rappel de paiement';
-  const body = `Bonjour ${contrat.client_nom},\n\n` +
-               `Rappel de votre ${isLocation ? 'loyer' : 'échéance'} :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 ${dateEcheance}\n` +
-               `📊 ${isLocation ? `Loyer de ${mois}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
-               `Veuillez effectuer votre paiement.`;
-
-  const result = await sendPushNotificationWithRetry(
-    contrat.client_token,
-    title,
-    body,
-    { type: 'PAYMENT_REMINDER', contractId: contrat.id_contrat, echeanceNumero: echeance.numero },
-    contrat.id_utilisateur,
-    'payment_reminder',
-    3
-  );
-  
-  return result.success;
-};
-
-/**
- * Envoie une info à l'agent (J-3)
- */
-const sendAgentInfo = async (contrat, echeance, isLocation) => {
-  const dateEcheance = new Date(echeance.date_echeance).toLocaleDateString('fr-FR');
-  const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
-  const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
-
-  const title = '📊 Rappel envoyé au client';
-  const body = `Bonjour ${contrat.agent_nom},\n\n` +
-               `Un rappel de ${isLocation ? 'loyer' : 'échéance de vente'} a été envoyé à ${contrat.client_nom} :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 ${dateEcheance}\n` +
-               `📊 ${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}`;
-
-  const result = await sendPushNotificationWithRetry(
-    contrat.agent_token,
-    title,
-    body,
-    { type: 'AGENT_INFO', contractId: contrat.id_contrat, echeanceNumero: echeance.numero },
-    contrat.id_agent,
-    'agent_info',
-    3
-  );
-  
-  return result.success;
-};
-
-/**
- * Envoie une alerte de retard à l'agent (J+1)
- */
-const sendLateAlert = async (contrat, echeance, isLocation, joursRetard) => {
-  const dateEcheance = new Date(echeance.date_echeance).toLocaleDateString('fr-FR');
-  const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
-  const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
-
-  const title = '⚠️ ALERTE - Paiement en retard';
-  const body = `Bonjour ${contrat.agent_nom},\n\n` +
-               `Le paiement de ${contrat.client_nom} est en retard :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 Échéance : ${dateEcheance}\n` +
-               `📅 Retard de ${joursRetard} jour(s)\n` +
-               `📊 ${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
-               `⚠️ Veuillez contacter le client.`;
-
-  const result = await sendPushNotificationWithRetry(
-    contrat.agent_token,
-    title,
-    body,
-    { type: 'LATE_PAYMENT_ALERT', contractId: contrat.id_contrat, echeanceNumero: echeance.numero, joursRetard },
-    contrat.id_agent,
-    'late_payment_alert',
-    3
-  );
-  
-  return result.success;
-};
-
-/**
- * Traite un contrat individuel
- */
-const processContract = async (contrat) => {
-  const resultat = {
-    contrat_id: contrat.id_contrat,
-    type: contrat.type_contrat,
-    envoyees: 0,
-    erreurs: 0,
-    actions: []
-  };
-
-  const clientNotifEnabled = await userHasNotificationsEnabled(contrat.id_utilisateur);
-  if (!clientNotifEnabled) {
-    console.log(`⏭️ Client ${contrat.id_utilisateur} a désactivé les notifications`);
-    return resultat;
-  }
-
-  let echeances = [];
-  try {
-    const details = typeof contrat.details_contrat === 'string' 
-      ? JSON.parse(contrat.details_contrat) 
-      : contrat.details_contrat;
-    
-    echeances = details?.echeances || [];
-    
-    if (echeances.length === 0) {
-      console.log(`📝 Génération des échéances pour contrat ${contrat.id_contrat}`);
-      echeances = await genererEcheances(contrat);
-    }
-  } catch (error) {
-    console.error(`❌ Erreur parsing contrat ${contrat.id_contrat}:`, error);
-    resultat.erreurs++;
-    return resultat;
-  }
-
-  if (echeances.length === 0) {
-    console.log(`ℹ️ Contrat ${contrat.id_contrat} sans échéances`);
-    return resultat;
-  }
-
-  const aujourdhui = new Date();
-  aujourdhui.setHours(0, 0, 0, 0);
-  const isLocation = contrat.type_contrat === 'location';
-
-  for (const echeance of echeances) {
-    if (echeance.statut === 'paye') continue;
-    if (echeance.date_rappel_envoye && echeance.statut === 'rappele') continue;
-
-    const dateEcheance = new Date(echeance.date_echeance);
-    dateEcheance.setHours(0, 0, 0, 0);
-    const diffJours = Math.ceil((dateEcheance - aujourdhui) / (1000 * 60 * 60 * 24));
-
-    // J-3 → Rappel au client
-    if (diffJours === 3 && echeance.statut === 'en_attente') {
-      console.log(`🔔 J-3 pour contrat ${contrat.id_contrat}, échéance ${echeance.numero}`);
-
-      const clientResult = await sendClientReminder(contrat, echeance, isLocation);
-      resultat.envoyees += clientResult ? 1 : 0;
-      resultat.actions.push({ type: 'rappel_client', echeance: echeance.numero, success: clientResult });
-
-      const agentResult = await sendAgentInfo(contrat, echeance, isLocation);
-      resultat.envoyees += agentResult ? 1 : 0;
-      resultat.actions.push({ type: 'info_agent', echeance: echeance.numero, success: agentResult });
-
-      await updateEcheanceStatus(contrat.id_contrat, echeance.numero, 'rappele');
-    }
-
-    // J+1 (dépassé) → Alerte à l'agent
-    if (diffJours < 0 && echeance.statut !== 'paye' && echeance.statut !== 'en_retard') {
-      const joursRetard = Math.abs(diffJours);
-      console.log(`⚠️ Retard de ${joursRetard} jour(s) pour contrat ${contrat.id_contrat}`);
-
-      const agentResult = await sendLateAlert(contrat, echeance, isLocation, joursRetard);
-      resultat.envoyees += agentResult ? 1 : 0;
-      resultat.actions.push({ type: 'alerte_retard', echeance: echeance.numero, joursRetard, success: agentResult });
-
-      await updateEcheanceStatus(contrat.id_contrat, echeance.numero, 'en_retard');
-    }
-  }
-
-  return resultat;
-};
-
-// ============================================================================
-// FONCTION PRINCIPALE EXPORTÉE
-// ============================================================================
-
-/**
- * Vérifie tous les contrats actifs et envoie les notifications nécessaires
- * Cette fonction est appelée automatiquement au démarrage du serveur
- */
-const checkAndSendNotifications = async () => {
-  console.log('🔍 [NotificationService] Vérification automatique des contrats...');
-  
-  try {
-    const contrats = await getActiveContracts();
-    
-    let resultats = {
-      notifications_envoyees: 0,
-      erreurs: 0,
-      details: []
-    };
-
-    for (const contrat of contrats) {
-      try {
-        const resultat = await processContract(contrat);
-        resultats.notifications_envoyees += resultat.envoyees || 0;
-        resultats.erreurs += resultat.erreurs || 0;
-        resultats.details.push(resultat);
-      } catch (error) {
-        console.error(`❌ Erreur contrat ${contrat.id_contrat}:`, error);
-        resultats.erreurs++;
-      }
-    }
-
-    console.log(`✅ [NotificationService] Terminé: ${resultats.notifications_envoyees} notifications envoyées`);
-    return resultats;
-
-  } catch (error) {
-    console.error('❌ [NotificationService] Erreur globale:', error);
-    return { notifications_envoyees: 0, erreurs: 1, details: [] };
-  }
-};
-
-
-
-
-
-
-// ============================================================================
-// EXPORTS
+// EXPORTS 
 // ============================================================================
 
 export {
@@ -3105,12 +2665,9 @@ export {
   notifyAgentAboutContractCompleted,
   notifyClientAboutContractCompleted,
   notifyClientAboutContractReminder,
-  notifyAgentAboutModificationDemand,
-  notifyClientAboutModificationAccepted,
-  notifyClientAboutModificationRefused,
-  userHasNotificationsEnabled,
-  getFollowersWithNotifications
+  
 };
+
 
 export default {
   sendPushNotification,
@@ -3140,9 +2697,9 @@ export default {
   notifyAgentAboutContractCompleted,
   notifyClientAboutContractCompleted,
   notifyClientAboutContractReminder,
-  notifyAgentAboutModificationDemand,
-  notifyClientAboutModificationAccepted,
-  notifyClientAboutModificationRefused,
-  userHasNotificationsEnabled,
-  getFollowersWithNotifications
+  
 };
+
+
+
+ 

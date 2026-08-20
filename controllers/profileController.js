@@ -27,7 +27,7 @@ export const profileController = {
       const response = {
         success: true,
         user: {
-          id: user.id_utilisateur,
+          id: user.id_utilisateur, 
           fullname: user.fullname,
           telephone: user.telephone,
           role: user.role,
@@ -328,7 +328,7 @@ export const profileController = {
   },
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Upload un avatar pour l'utilisateur
+   * Upload un avatar pour l'utilisateur
    */
 async uploadAvatar(req, res) {
   try {
@@ -388,8 +388,194 @@ async uploadAvatar(req, res) {
     }
 },
 
+
+/**
+ * Rafraîchit l'avatar (re-télécharge ou re-génère)
+ */
+async refreshAvatar(req, res) {
+  try {
+    const userId = req.user.id;
+    console.log('🔄 Refresh avatar - User ID:', userId);
+
+    // Récupérer le profil actuel
+    const existingProfile = await Profile.findByUserId(userId);
+    
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profil non trouvé'
+      });
+    }
+
+    // Si l'utilisateur a déjà un avatar, on le garde
+    // Sinon, on utilise un avatar par défaut
+    let avatarFilename = existingProfile.avatar;
+
+    // Si pas d'avatar, on peut en générer un par défaut
+    if (!avatarFilename) {
+      // Option 1: Utiliser un avatar par défaut (par exemple initials)
+      // Option 2: Générer un identicon basé sur l'email ou l'ID
+      // Option 3: Utiliser un service comme Gravatar
+      
+      // Exemple: Avatar par défaut avec les initiales
+      const user = await User.findById(userId);
+      if (user && user.fullname) {
+        const initials = user.fullname
+          .split(' ')
+          .map(word => word[0])
+          .join('')
+          .toUpperCase()
+          .slice(0, 2);
+        
+        // Créer un avatar par défaut (vous pouvez générer une image SVG)
+        avatarFilename = `default-${initials}-${userId}.png`;
+        
+        // Vous pouvez générer ici un vrai fichier image
+        // ou stocker une référence à un avatar par défaut
+      }
+    }
+
+    // Mettre à jour le profil avec l'avatar rafraîchi
+    // On utilise la même méthode que pour l'upload
+    const result = await Profile.updateAvatar(userId, avatarFilename);
+
+    if (!result) {
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur lors du rafraîchissement de l\'avatar'
+      });
+    }
+
+    // Récupérer le profil mis à jour
+    const updatedProfile = await Profile.findByUserId(userId);
+
+    // Construire l'URL complète de l'avatar
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const avatarUrl = avatarFilename 
+      ? `${baseUrl}/uploads/avatars/${avatarFilename}`
+      : null;
+
+    console.log('✅ Avatar rafraîchi pour ID:', userId);
+
+    res.json({
+      success: true,
+      message: 'Avatar rafraîchi avec succès',
+      avatarFilename: avatarFilename,
+      avatarUrl: avatarUrl,
+      profile: {
+        id_profile: updatedProfile.id_profile,
+        email: updatedProfile.email,
+        adresse: updatedProfile.adresse,
+        ville: updatedProfile.ville,
+        pays: updatedProfile.pays,
+        bio: updatedProfile.bio,
+        avatar: updatedProfile.avatar,
+        preferences: updatedProfile.preferences,
+        date_mise_a_jour: updatedProfile.date_mise_a_jour
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Refresh avatar error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors du rafraîchissement de l\'avatar'
+    });
+  }
+}, 
+
+/**
+ * Rafraîchit l'avatar avec un nouveau fichier uploadé
+ */
+async refreshAvatarWithUpload(req, res) {
+  try {
+    const userId = req.user.id;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Aucun fichier uploadé'
+      });
+    }
+
+    console.log('🔄 Refresh avatar with upload - User ID:', userId);
+
+    // Vérifier si le profil existe
+    const existingProfile = await Profile.findByUserId(userId);
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message: 'Profil non trouvé'
+      });
+    }
+
+    // Supprimer l'ancien avatar
+    if (existingProfile.avatar) {
+      await Profile.deleteOldAvatarFile(existingProfile.avatar);
+    }
+
+    // Stocker le nouveau nom de fichier
+    const filename = req.file.filename;
+    
+    // Mettre à jour le profil avec le nouveau fichier
+    const result = await Profile.cleanAndUpdateAvatar(userId, filename);
+
+    if (!result) {
+      // Si erreur, supprimer le fichier uploadé
+      const fs = await import('fs');
+      const filePath = path.join(process.cwd(), 'uploads', 'avatars', filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Erreur lors de la mise à jour de l\'avatar'
+      });
+    }
+
+    // Récupérer le profil mis à jour
+    const updatedProfile = await Profile.findByUserId(userId);
+
+    // Construire l'URL complète
+    const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/avatars/${filename}`;
+
+    res.json({
+      success: true,
+      message: 'Avatar rafraîchi avec succès',
+      avatarFilename: filename,
+      avatarUrl: avatarUrl,
+      profile: await Profile.findByUserId(userId)
+    });
+
+  } catch (error) {
+    console.error('❌ Refresh avatar with upload error:', error);
+    
+    // Gestion spécifique des erreurs multer
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Fichier trop volumineux (max 5MB)'
+      });
+    }
+    
+    if (error.message.includes('Seules les images sont autorisées')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Type de fichier non autorisé. Seules les images sont acceptées.'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors du rafraîchissement de l\'avatar'
+    });
+  }
+},
+
+
   /**
-   * ✅ NOUVELLE MÉTHODE : Supprime l'avatar de l'utilisateur
+   * Supprime l'avatar de l'utilisateur
    */
   async deleteAvatar(req, res) {
     try {
@@ -452,7 +638,7 @@ async uploadAvatar(req, res) {
   },
 
   /**
-   * ✅ NOUVELLE MÉTHODE : Vérifie la santé du système d'upload
+   * Vérifie la santé du système d'upload
    */
   async checkUploadHealth(req, res) {
     try {
