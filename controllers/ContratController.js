@@ -1,4 +1,3 @@
-// controllers/contratController.js
 import Contrat from '../models/Contrat.js';
 import Propriete from '../models/Propriete.js';
 import User from '../models/Utilisateur.js';

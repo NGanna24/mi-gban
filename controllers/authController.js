@@ -922,47 +922,54 @@ async hasEmail(req, res) {
     }
   },
 
-  /**
-   * Récupération du profil utilisateur
-   */
-  async getProfile(req, res) {
-    try {
-      console.log('👤 Get profile - User ID:', req.user.id);
-      
-      const user = await User.findByIdWithoutPassword(req.user.id);
-      console.log('🔍🔍🔍🔍🔍🔍🔍🔍🔍🔍 Profil récupéré:', user);
-      
-      if (!user) {
-        console.log('❌ Utilisateur non trouvé pour getProfile ID:', req.user.id);
-        return res.status(404).json({
-          success: false,
-          message: 'Utilisateur non trouvé'
-        });
-      }
+/**
+ * Récupération du profil utilisateur
+ */
+async getProfile(req, res) {
+  try {
+    console.log('👤 Get profile - User ID:', req.user.id);
 
-      console.log('✅ Profil récupéré pour ID:', req.user.id);
+    const user = await User.findByIdWithoutPassword(req.user.id);
 
-      res.json({
-        success: true,
-        user: {
-          id: user.id_utilisateur,
-          fullname: user.fullname,
-          telephone: user.telephone,
-          role: user.role,
-          est_actif: user.est_actif,
-          date_inscription: user.date_inscription,
-          profile: user.profile
-        }
-      });
+    console.log('🔍 Profil récupéré:', user);
 
-    } catch (error) {
-      console.error('❌ Get profile error:', error);
-      res.status(500).json({
+    if (!user) {
+      console.log(
+        '❌ Session invalide : utilisateur inexistant, ID:',
+        req.user.id
+      );
+
+      return res.status(401).json({
         success: false,
-        message: 'Erreur lors de la récupération du profil'
+        code: 'USER_NOT_FOUND',
+        message: 'Session invalide. Veuillez vous reconnecter.'
       });
     }
-  },
+
+    console.log('✅ Profil récupéré pour ID:', req.user.id);
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user.id_utilisateur,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        date_inscription: user.date_inscription,
+        profile: user.profile
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Get profile error:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération du profil'
+    });
+  }
+},
 
   /**
    * Récupération des informations de l'agence

@@ -27,7 +27,7 @@ router.post('/change-password', authenticateToken, authController.changePassword
 // ==================== ROUTES POUR LES AGENCES ====================
 router.get('/agence/:id_utilisateur', authenticateToken, authController.getAgenceInfo);
 
-// ==================== ROUTES DE VÉRIFICATION ====================
+// ==================== ROUTES DE VÉRIFICATION ==================== 
 router.get('/verify/:userId', authenticateToken, authController.verifyUser);
 router.get('/verify-token', authenticateToken, authController.verifyToken);
 router.get('/exists/:userId', authenticateToken, authController.userExists);
