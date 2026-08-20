@@ -789,7 +789,7 @@ static async update(id, userData = {}) {
     }
   }
 
-  /**
+  /** 
    * Vérifie la santé de la table
    */
   static async checkTableHealth() {
