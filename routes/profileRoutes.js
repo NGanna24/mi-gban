@@ -7,7 +7,7 @@ import { handleUploadErrors, validateFilePresence } from '../middlewares/upload.
 const router = express.Router();
 
 // Toutes les routes nécessitent une authentification
-router.use(authenticateToken);
+router.use(authenticateToken); 
 
 // ==================== ROUTES PRINCIPALES DU PROFIL ====================
  

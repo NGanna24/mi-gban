@@ -1,7 +1,14 @@
+// controllers/profileController.js
 import { pool } from "../config/db.js";
 import Profile from "../models/Profile.js";
 import User from "../models/Utilisateur.js";
 import { uploadAvatar } from '../middlewares/upload.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const profileController = {
   /**
@@ -9,8 +16,17 @@ export const profileController = {
    */
   async getProfile(req, res) { 
     try { 
-      const userId = req.user.id;
+      // ✅ CORRECTION : Utiliser req.id_utilisateur
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
       console.log('👤 Get profile complet - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
 
       // Récupérer les infos de base de l'utilisateur
       const user = await User.findById(userId);
@@ -68,10 +84,19 @@ export const profileController = {
    */
   async createOrUpdateProfile(req, res) {
     try {
-      const userId = req.user.id;
-      const { email, adresse, ville, pays, bio, avatar, preferences } = req.body;
-
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
       console.log('✏️ Create/Update profile - User ID:', userId, 'Data:', req.body);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+
+      const { email, adresse, ville, pays, bio, avatar, preferences } = req.body;
 
       // Validation de l'email si fourni
       if (email) {
@@ -161,10 +186,19 @@ export const profileController = {
    */
   async updateProfile(req, res) {
     try {
-      const userId = req.user.id;
-      const { email, adresse, ville, pays, bio, avatar, preferences } = req.body;
-
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
       console.log('✏️ Update profile only - User ID:', userId, 'Data:', req.body);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+
+      const { email, adresse, ville, pays, bio, avatar, preferences } = req.body;
 
       // Vérifier si le profil existe
       const existingProfile = await Profile.findByUserId(userId);
@@ -265,8 +299,17 @@ export const profileController = {
    */
   async deleteProfile(req, res) {
     try {
-      const userId = req.user.id;
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
       console.log('🗑️ Delete profile - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
 
       const deleted = await Profile.delete(userId);
 
@@ -298,8 +341,9 @@ export const profileController = {
    */
   async checkEmailAvailability(req, res) {
     try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { email } = req.query;
-      const userId = req.user.id;
 
       console.log('📧 Check email availability:', email, 'for user:', userId);
 
@@ -330,40 +374,50 @@ export const profileController = {
   /**
    * Upload un avatar pour l'utilisateur
    */
-async uploadAvatar(req, res) {
-  try {
-    const userId = req.user.id;
-    
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Aucun fichier uploadé'
+  async uploadAvatar(req, res) {
+    try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
+      console.log('📤 Upload avatar - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Aucun fichier uploadé'
+        });
+      }
+
+      // ✅ Stocker seulement le nom du fichier
+      const filename = req.file.filename;
+      
+      // Mettre à jour le profil avec le nom du fichier seulement
+      const result = await Profile.cleanAndUpdateAvatar(userId, filename);
+
+      if (!result) {
+        return res.status(500).json({
+          success: false,
+          message: 'Erreur lors de la mise à jour de l\'avatar'
+        });
+      }
+
+      // ✅ Retourner les deux formats
+      res.json({
+        success: true,
+        message: 'Avatar mis à jour avec succès',
+        avatarFilename: filename, // ✅ Nom seul
+        avatarUrl: `${req.protocol}://${req.get('host')}/uploads/avatars/${filename}`, // ✅ URL complète
+        profile: await Profile.findByUserId(userId)
       });
-    }
 
-    // ✅ Stocker seulement le nom du fichier
-    const filename = req.file.filename;
-    
-    // Mettre à jour le profil avec le nom du fichier seulement
-    const result = await Profile.cleanAndUpdateAvatar(userId, filename);
-
-    if (!result) {
-      return res.status(500).json({
-        success: false,
-        message: 'Erreur lors de la mise à jour de l\'avatar'
-      });
-    }
-
-    // ✅ Retourner les deux formats
-    res.json({
-      success: true,
-      message: 'Avatar mis à jour avec succès',
-      avatarFilename: filename, // ✅ Nom seul
-      avatarUrl: `${req.protocol}://${req.get('host')}/uploads/avatars/${filename}`, // ✅ URL complète
-      profile: await Profile.findByUserId(userId)
-    });
-
-  } catch (error) {
+    } catch (error) {
       console.error('❌ Upload avatar error:', error);
       
       // Gestion spécifique des erreurs multer
@@ -386,201 +440,214 @@ async uploadAvatar(req, res) {
         message: 'Erreur lors de l\'upload de l\'avatar'
       });
     }
-},
+  },
 
-
-/**
- * Rafraîchit l'avatar (re-télécharge ou re-génère)
- */
-async refreshAvatar(req, res) {
-  try {
-    const userId = req.user.id;
-    console.log('🔄 Refresh avatar - User ID:', userId);
-
-    // Récupérer le profil actuel
-    const existingProfile = await Profile.findByUserId(userId);
-    
-    if (!existingProfile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profil non trouvé'
-      });
-    }
-
-    // Si l'utilisateur a déjà un avatar, on le garde
-    // Sinon, on utilise un avatar par défaut
-    let avatarFilename = existingProfile.avatar;
-
-    // Si pas d'avatar, on peut en générer un par défaut
-    if (!avatarFilename) {
-      // Option 1: Utiliser un avatar par défaut (par exemple initials)
-      // Option 2: Générer un identicon basé sur l'email ou l'ID
-      // Option 3: Utiliser un service comme Gravatar
+  /**
+   * Rafraîchit l'avatar (re-télécharge ou re-génère)
+   */
+  async refreshAvatar(req, res) {
+    try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       
-      // Exemple: Avatar par défaut avec les initiales
-      const user = await User.findById(userId);
-      if (user && user.fullname) {
-        const initials = user.fullname
-          .split(' ')
-          .map(word => word[0])
-          .join('')
-          .toUpperCase()
-          .slice(0, 2);
-        
-        // Créer un avatar par défaut (vous pouvez générer une image SVG)
-        avatarFilename = `default-${initials}-${userId}.png`;
-        
-        // Vous pouvez générer ici un vrai fichier image
-        // ou stocker une référence à un avatar par défaut
+      console.log('🔄 Refresh avatar - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
       }
-    }
 
-    // Mettre à jour le profil avec l'avatar rafraîchi
-    // On utilise la même méthode que pour l'upload
-    const result = await Profile.updateAvatar(userId, avatarFilename);
+      // Récupérer le profil actuel
+      const existingProfile = await Profile.findByUserId(userId);
+      
+      if (!existingProfile) {
+        return res.status(404).json({
+          success: false,
+          message: 'Profil non trouvé'
+        });
+      }
 
-    if (!result) {
-      return res.status(500).json({
+      // Si l'utilisateur a déjà un avatar, on le garde
+      // Sinon, on utilise un avatar par défaut
+      let avatarFilename = existingProfile.avatar;
+
+      // Si pas d'avatar, on peut en générer un par défaut
+      if (!avatarFilename) {
+        const user = await User.findById(userId);
+        if (user && user.fullname) {
+          const initials = user.fullname
+            .split(' ')
+            .map(word => word[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2);
+          
+          avatarFilename = `default-${initials}-${userId}.png`;
+        }
+      }
+
+      // Mettre à jour le profil avec l'avatar rafraîchi
+      const result = await Profile.updateAvatar(userId, avatarFilename);
+
+      if (!result) {
+        return res.status(500).json({
+          success: false,
+          message: 'Erreur lors du rafraîchissement de l\'avatar'
+        });
+      }
+
+      // Récupérer le profil mis à jour
+      const updatedProfile = await Profile.findByUserId(userId);
+
+      // Construire l'URL complète de l'avatar
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const avatarUrl = avatarFilename 
+        ? `${baseUrl}/uploads/avatars/${avatarFilename}`
+        : null;
+
+      console.log('✅ Avatar rafraîchi pour ID:', userId);
+
+      res.json({
+        success: true,
+        message: 'Avatar rafraîchi avec succès',
+        avatarFilename: avatarFilename,
+        avatarUrl: avatarUrl,
+        profile: {
+          id_profile: updatedProfile.id_profile,
+          email: updatedProfile.email,
+          adresse: updatedProfile.adresse,
+          ville: updatedProfile.ville,
+          pays: updatedProfile.pays,
+          bio: updatedProfile.bio,
+          avatar: updatedProfile.avatar,
+          preferences: updatedProfile.preferences,
+          date_mise_a_jour: updatedProfile.date_mise_a_jour
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Refresh avatar error:', error);
+      res.status(500).json({
         success: false,
         message: 'Erreur lors du rafraîchissement de l\'avatar'
       });
     }
+  },
 
-    // Récupérer le profil mis à jour
-    const updatedProfile = await Profile.findByUserId(userId);
+  /**
+   * Rafraîchit l'avatar avec un nouveau fichier uploadé
+   */
+  async refreshAvatarWithUpload(req, res) {
+    try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
+      console.log('🔄 Refresh avatar with upload - User ID:', userId);
 
-    // Construire l'URL complète de l'avatar
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    const avatarUrl = avatarFilename 
-      ? `${baseUrl}/uploads/avatars/${avatarFilename}`
-      : null;
-
-    console.log('✅ Avatar rafraîchi pour ID:', userId);
-
-    res.json({
-      success: true,
-      message: 'Avatar rafraîchi avec succès',
-      avatarFilename: avatarFilename,
-      avatarUrl: avatarUrl,
-      profile: {
-        id_profile: updatedProfile.id_profile,
-        email: updatedProfile.email,
-        adresse: updatedProfile.adresse,
-        ville: updatedProfile.ville,
-        pays: updatedProfile.pays,
-        bio: updatedProfile.bio,
-        avatar: updatedProfile.avatar,
-        preferences: updatedProfile.preferences,
-        date_mise_a_jour: updatedProfile.date_mise_a_jour
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Refresh avatar error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors du rafraîchissement de l\'avatar'
-    });
-  }
-}, 
-
-/**
- * Rafraîchit l'avatar avec un nouveau fichier uploadé
- */
-async refreshAvatarWithUpload(req, res) {
-  try {
-    const userId = req.user.id;
-    
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Aucun fichier uploadé'
-      });
-    }
-
-    console.log('🔄 Refresh avatar with upload - User ID:', userId);
-
-    // Vérifier si le profil existe
-    const existingProfile = await Profile.findByUserId(userId);
-    if (!existingProfile) {
-      return res.status(404).json({
-        success: false,
-        message: 'Profil non trouvé'
-      });
-    }
-
-    // Supprimer l'ancien avatar
-    if (existingProfile.avatar) {
-      await Profile.deleteOldAvatarFile(existingProfile.avatar);
-    }
-
-    // Stocker le nouveau nom de fichier
-    const filename = req.file.filename;
-    
-    // Mettre à jour le profil avec le nouveau fichier
-    const result = await Profile.cleanAndUpdateAvatar(userId, filename);
-
-    if (!result) {
-      // Si erreur, supprimer le fichier uploadé
-      const fs = await import('fs');
-      const filePath = path.join(process.cwd(), 'uploads', 'avatars', filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
       }
       
-      return res.status(500).json({
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'Aucun fichier uploadé'
+        });
+      }
+
+      // Vérifier si le profil existe
+      const existingProfile = await Profile.findByUserId(userId);
+      if (!existingProfile) {
+        return res.status(404).json({
+          success: false,
+          message: 'Profil non trouvé'
+        });
+      }
+
+      // Supprimer l'ancien avatar
+      if (existingProfile.avatar) {
+        await Profile.deleteOldAvatarFile(existingProfile.avatar);
+      }
+
+      // Stocker le nouveau nom de fichier
+      const filename = req.file.filename;
+      
+      // Mettre à jour le profil avec le nouveau fichier
+      const result = await Profile.cleanAndUpdateAvatar(userId, filename);
+
+      if (!result) {
+        // Si erreur, supprimer le fichier uploadé
+        const filePath = path.join(process.cwd(), 'uploads', 'avatars', filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        
+        return res.status(500).json({
+          success: false,
+          message: 'Erreur lors de la mise à jour de l\'avatar'
+        });
+      }
+
+      // Récupérer le profil mis à jour
+      const updatedProfile = await Profile.findByUserId(userId);
+
+      // Construire l'URL complète
+      const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/avatars/${filename}`;
+
+      res.json({
+        success: true,
+        message: 'Avatar rafraîchi avec succès',
+        avatarFilename: filename,
+        avatarUrl: avatarUrl,
+        profile: updatedProfile
+      });
+
+    } catch (error) {
+      console.error('❌ Refresh avatar with upload error:', error);
+      
+      // Gestion spécifique des erreurs multer
+      if (error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Fichier trop volumineux (max 5MB)'
+        });
+      }
+      
+      if (error.message.includes('Seules les images sont autorisées')) {
+        return res.status(400).json({
+          success: false,
+          message: 'Type de fichier non autorisé. Seules les images sont acceptées.'
+        });
+      }
+
+      res.status(500).json({
         success: false,
-        message: 'Erreur lors de la mise à jour de l\'avatar'
+        message: 'Erreur lors du rafraîchissement de l\'avatar'
       });
     }
-
-    // Récupérer le profil mis à jour
-    const updatedProfile = await Profile.findByUserId(userId);
-
-    // Construire l'URL complète
-    const avatarUrl = `${req.protocol}://${req.get('host')}/uploads/avatars/${filename}`;
-
-    res.json({
-      success: true,
-      message: 'Avatar rafraîchi avec succès',
-      avatarFilename: filename,
-      avatarUrl: avatarUrl,
-      profile: await Profile.findByUserId(userId)
-    });
-
-  } catch (error) {
-    console.error('❌ Refresh avatar with upload error:', error);
-    
-    // Gestion spécifique des erreurs multer
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({
-        success: false,
-        message: 'Fichier trop volumineux (max 5MB)'
-      });
-    }
-    
-    if (error.message.includes('Seules les images sont autorisées')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Type de fichier non autorisé. Seules les images sont acceptées.'
-      });
-    }
-
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors du rafraîchissement de l\'avatar'
-    });
-  }
-},
-
+  },
 
   /**
    * Supprime l'avatar de l'utilisateur
    */
   async deleteAvatar(req, res) {
     try {
-      const userId = req.user.id;
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
       console.log('🗑️ Delete avatar - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
 
       // Récupérer le profil actuel
       const existingProfile = await Profile.findByUserId(userId);
@@ -642,8 +709,12 @@ async refreshAvatarWithUpload(req, res) {
    */
   async checkUploadHealth(req, res) {
     try {
-      const fs = await import('fs');
-      const uploadsDir = './uploads/avatars';
+      // ✅ CORRECTION (optionnel car cette route peut être publique)
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
+      console.log('🏥 Check upload health - User ID:', userId);
+
+      const uploadsDir = path.join(process.cwd(), 'uploads', 'avatars');
       
       const dirExists = fs.existsSync(uploadsDir);
       let fileCount = 0;
@@ -654,7 +725,7 @@ async refreshAvatarWithUpload(req, res) {
         fileCount = files.length;
         
         files.forEach(file => {
-          const stats = fs.statSync(`${uploadsDir}/${file}`);
+          const stats = fs.statSync(path.join(uploadsDir, file));
           totalSize += stats.size;
         });
       }

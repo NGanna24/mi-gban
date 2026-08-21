@@ -4,7 +4,7 @@ import fs from 'fs';
 import { UPLOAD_CONFIG } from '../config/upload.js';
 
 // Création du dossier temporaire
-if (!fs.existsSync(UPLOAD_CONFIG.TEMP_DIR)) {
+if (!fs.existsSync(UPLOAD_CONFIG.TEMP_DIR)) { 
     fs.mkdirSync(UPLOAD_CONFIG.TEMP_DIR, { recursive: true });
 }
 

@@ -430,7 +430,7 @@ static async findByEmail(email) {
   }
 
   /**
-   * Vérifie si l'utilisateur existe
+   * Vérifie si l'utilisateur existe 
    */
   static async exists(id) {
     try {
@@ -445,9 +445,53 @@ static async findByEmail(email) {
       console.error('❌ Erreur vérification existence:', error);
       throw error;
     }
-  }
+  }// User.js - Modifiez la méthode exists
 
-    /**
+/**
+ * Vérifie si l'utilisateur existe ET récupère son statut
+ */
+static async existsWithStatus(id) {
+  try {
+    console.log('🔍 Vérification existence utilisateur:', id);
+    
+    const [rows] = await pool.execute(
+      `SELECT 
+        id_utilisateur, 
+        role, 
+        est_actif 
+       FROM Utilisateur 
+       WHERE id_utilisateur = ?`,
+      [id]
+    );
+    
+    if (rows.length === 0) {
+      console.log('❌ Utilisateur non trouvé');
+      return { exists: false, user: null };
+    }
+    
+    const user = rows[0];
+    console.log('✅ Utilisateur trouvé:', {
+      id: user.id_utilisateur,
+      role: user.role,
+      est_actif: user.est_actif
+    });
+    
+    return {
+      exists: true,
+      user: {
+        id_utilisateur: user.id_utilisateur,
+        role: user.role,
+        est_actif: user.est_actif === 1
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ Erreur existsWithStatus:', error);
+    throw error;
+  }
+}
+
+    /** 
    * Vérifie si l'utilisateur à définir un email dans son profil
    */
 /**

@@ -63,14 +63,21 @@ const avatarFileFilter = (req, file, cb) => {
   const allowedMimes = [
     'image/jpeg',
     'image/jpg', 
+    'image/pjpeg', // Variante mobile pour JPEG
     'image/png',
+    'image/x-png', // Variante mobile pour PNG
     'image/gif',
     'image/webp',
-    'image/svg+xml'
+    'image/svg+xml',
+    'image/heic',   // Photos iPhone (HEIC)
+    'image/heif',   // Photos Apple/Android
+    'image/avif'    // Nouveau standard Android
   ];
   
-  const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
-  const fileExtension = path.extname(file.originalname).toLowerCase();
+  const allowedExtensions = [
+    '.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', 
+    '.heic', '.heif', '.avif'
+  ];  const fileExtension = path.extname(file.originalname).toLowerCase();
 
   if (allowedMimes.includes(file.mimetype) && allowedExtensions.includes(fileExtension)) {
     cb(null, true);

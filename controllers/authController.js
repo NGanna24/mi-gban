@@ -199,7 +199,7 @@ export const authController = {
       // recuperation de l'avatar de l'utilisateur avec la methode getAvatarByUserId du profile
       const avatar = await Profile.getAvatarByUserId(user.id);
       console.log('🔍 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAavatar récupéré pour ID:', user.id, 'Avatar:', avatar);
-
+ 
       res.json({
         success: true,
         message: 'Connexion réussie',
@@ -295,41 +295,56 @@ export const authController = {
   // ===================    VERRIFICATION DU MAIL DANS LE PROFIL    AVEC LA METHODE hasEmail ===================
 
 
-// Dans authController.js
-async hasEmail(req, res) {
-  try {
-    // Si vous utilisez query params
-    const userId = req.query.id || req.user.id;
-    
-    // Ou si vous utilisez le paramètre dans l'URL
-    // const userId = req.params.id;
-    
-    console.log('🔍 Vérification email pour ID:', userId);
-    
-    const hasEmail = await User.hasEmail(userId);
-    
-    res.json({
-      success: true,
-      hasEmail
-    });
-  } catch (error) {
-    console.error('❌ Erreur vérification email:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la vérification de l\'email'
-    });
-  }
-},
+  /**
+   * VÉRIFICATION DE L'EMAIL
+   */
+  async hasEmail(req, res) {
+    try {
+      // ✅ CORRECTION : Utiliser req.id_utilisateur
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
+      console.log('🔍 Vérification email pour ID:', userId);
+      
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+      
+      const hasEmail = await User.hasEmail(userId);
+      
+      res.json({
+        success: true,
+        hasEmail
+      });
+    } catch (error) {
+      console.error('❌ Erreur vérification email:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Erreur lors de la vérification de l\'email'
+      });
+    }
+  },
+
 
   /**
-   * CHANGEMENT DE MOT DE PASSE (4 chiffres)
+   * CHANGEMENT DE MOT DE PASSE
    */
   async changePassword(req, res) {
     try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { currentPassword, newPassword } = req.body;
-      const userId = req.user.id;
 
       console.log('🔐 Changement mot de passe - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
 
       // Validation
       if (!currentPassword || !newPassword) {
@@ -339,7 +354,6 @@ async hasEmail(req, res) {
         });
       }
 
-      // Validation du nouveau mot de passe (4 chiffres)
       if (!/^\d{4}$/.test(newPassword)) {
         return res.status(400).json({
           success: false,
@@ -347,7 +361,6 @@ async hasEmail(req, res) {
         });
       }
 
-      // Vérifier l'utilisateur avec le mot de passe actuel
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
@@ -356,7 +369,6 @@ async hasEmail(req, res) {
         });
       }
 
-      // Vérifier le mot de passe actuel
       const isValid = await User.verifyPassword(currentPassword, user.password);
       if (!isValid) {
         return res.status(401).json({
@@ -365,7 +377,6 @@ async hasEmail(req, res) {
         });
       }
 
-      // Mettre à jour le mot de passe
       const updated = await User.updatePassword(userId, newPassword);
 
       if (!updated) {
@@ -623,16 +634,23 @@ async hasEmail(req, res) {
   },
 
   /**
-   * MISE À JOUR DES INFORMATIONS UTILISATEUR (fullname et telephone)
+   * MISE À JOUR DES INFORMATIONS UTILISATEUR
    */
   async update(req, res) {
     try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { fullname, telephone } = req.body;
-      const userId = req.user.id;
 
       console.log('✏️ Update user - User ID:', userId, 'Data:', { fullname, telephone });
 
-      // Validation
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+
       if (!fullname && !telephone) {
         return res.status(400).json({
           success: false,
@@ -640,13 +658,10 @@ async hasEmail(req, res) {
         });
       }
 
-      // Préparer les données à mettre à jour
       const updates = {};
       if (fullname) updates.fullname = fullname;
       if (telephone) {
         updates.telephone = telephone.replace(/\s/g, '');
-        
-        // Validation du téléphone
         if (updates.telephone.length < 10) {
           return res.status(400).json({
             success: false,
@@ -655,9 +670,6 @@ async hasEmail(req, res) {
         }
       }
 
-      console.log('📝 Mise à jour avec données:', updates);
-
-      // Mettre à jour l'utilisateur
       const updatedUser = await User.update(userId, updates);
 
       if (!updatedUser) {
@@ -686,7 +698,6 @@ async hasEmail(req, res) {
     } catch (error) {
       console.error('❌ Update user error:', error);
       
-      // Gestion spécifique des erreurs de doublon
       if (error.message.includes('déjà utilisé')) {
         return res.status(400).json({
           success: false,
@@ -696,8 +707,7 @@ async hasEmail(req, res) {
 
       res.status(500).json({
         success: false,
-        message: 'Erreur lors de la mise à jour des informations',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'Erreur lors de la mise à jour des informations'
       });
     }
   },
@@ -922,73 +932,84 @@ async hasEmail(req, res) {
     }
   },
 
-/**
- * Récupération du profil utilisateur
- */
-async getProfile(req, res) {
-  try {
-    console.log('👤 Get profile - User ID:', req.user.id);
+  /**
+   * RÉCUPÉRATION DU PROFIL
+   */
+  async getProfile(req, res) {
+    try {
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      
+      console.log('👤 Get profile - User ID:', userId);
 
-    const user = await User.findByIdWithoutPassword(req.user.id);
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
 
-    console.log('🔍 Profil récupéré:', user);
+      const user = await User.findByIdWithoutPassword(userId);
 
-    if (!user) {
-      console.log(
-        '❌ Session invalide : utilisateur inexistant, ID:',
-        req.user.id
-      );
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          code: 'USER_NOT_FOUND',
+          message: 'Session invalide. Veuillez vous reconnecter.'
+        });
+      }
 
-      return res.status(401).json({
+      console.log('✅ Profil récupéré pour ID:', userId);
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          id: user.id_utilisateur,
+          fullname: user.fullname,
+          telephone: user.telephone,
+          role: user.role,
+          est_actif: user.est_actif,
+          date_inscription: user.date_inscription,
+          profile: user.profile
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get profile error:', error);
+      return res.status(500).json({
         success: false,
-        code: 'USER_NOT_FOUND',
-        message: 'Session invalide. Veuillez vous reconnecter.'
+        message: 'Erreur lors de la récupération du profil'
       });
     }
-
-    console.log('✅ Profil récupéré pour ID:', req.user.id);
-
-    return res.status(200).json({
-      success: true,
-      user: {
-        id: user.id_utilisateur,
-        fullname: user.fullname,
-        telephone: user.telephone,
-        role: user.role,
-        est_actif: user.est_actif,
-        date_inscription: user.date_inscription,
-        profile: user.profile
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Get profile error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Erreur lors de la récupération du profil'
-    });
-  }
-},
+  },
 
   /**
-   * Récupération des informations de l'agence
+   * RÉCUPÉRATION DES INFORMATIONS DE L'AGENCE
    */
   async getAgenceInfo(req, res) {
     try {
-      console.log('👤 Get agence info - User ID:', req.user.id);
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       
-      const user = await User.findByIdWithoutPassword(req.user.id);
+      console.log('👤 Get agence info - User ID:', userId);
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant'
+        });
+      }
+      
+      const user = await User.findByIdWithoutPassword(userId);
       
       if (!user) {
-        console.log('Agence non trouvé :', req.user.id);
         return res.status(404).json({
           success: false,
           message: 'Agence non trouvé'
         });
       }
 
-      console.log('Profil récupéré pour ID:', req.user.id);
+      console.log('Profil récupéré pour ID:', userId);
 
       res.json({
         success: true,
@@ -1007,7 +1028,7 @@ async getProfile(req, res) {
       console.error('❌ Get agence error:', error);
       res.status(500).json({
         success: false,
-        message: 'Erreur lors de la des informations de l\'agence.'
+        message: 'Erreur lors de la récupération des informations de l\'agence.'
       });
     }
   },
@@ -1117,14 +1138,22 @@ async getProfile(req, res) {
   },
 
   /**
-   * Enregistrement du token Expo pour les notifications push
+   * ENREGISTREMENT DU TOKEN EXPO
    */
   async registerExpoToken(req, res) {
     try {
-      const { expoPushToken } = req.body; 
-      const userId = req.user.id;
+      // ✅ CORRECTION
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      const { expoPushToken } = req.body;
 
       console.log('💾 Enregistrement token Expo:', { userId, expoPushToken });
+
+      if (!userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'ID utilisateur manquant. Veuillez vous reconnecter.'
+        });
+      }
 
       if (!expoPushToken) {
         return res.status(400).json({
@@ -1141,6 +1170,8 @@ async getProfile(req, res) {
           message: 'Utilisateur non trouvé'
         });
       }
+
+      console.log('✅ Token Expo enregistré pour userId:', userId);
 
       res.json({
         success: true,
