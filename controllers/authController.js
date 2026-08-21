@@ -834,103 +834,122 @@ export const authController = {
     }
   },
 
-  /**
-   * Endpoint de vérification de token simple
-   */
-  async verifyToken(req, res) {
-    try {
-      console.log('🔐 Verify token - User ID:', req.user.id);
-      
-      const user = await User.findByIdWithoutPassword(req.user.id);
-      
-      if (!user) {
-        console.log('❌ Utilisateur non trouvé pour verify-token ID:', req.user.id);
-        return res.status(404).json({
-          success: false,
-          valid: false,
-          message: 'Utilisateur non trouvé'
-        });
-      }
+/**
+ * Endpoint de vérification de token simple
+ */
+async verifyToken(req, res) {
+  try {
+    // ✅ CORRECTION
+    const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+    
+    console.log('🔐 Verify token - User ID:', userId);
 
-      // Vérifier si le compte est actif
-      if (!user.est_actif) {
-        console.log('🚫 Compte désactivé pour verify-token ID:', req.user.id);
-        return res.status(403).json({
-          success: false,
-          valid: false,
-          message: 'Ce compte a été désactivé'
-        });
-      }
-
-      console.log('✅ Token valide pour ID:', req.user.id);
- 
-      res.json({
-        success: true,
-        valid: true,
-        user: {
-          id: user.id_utilisateur,
-          fullname: user.fullname,
-          telephone: user.telephone,
-          role: user.role,
-          est_actif: user.est_actif,
-          date_inscription: user.date_inscription
-        }
-      });
-
-    } catch (error) {
-      console.error('❌ Verify token error:', error);
-      res.status(500).json({
+    if (!userId) {
+      return res.status(400).json({
         success: false,
         valid: false,
-        message: 'Erreur lors de la vérification du token',
-        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        message: 'ID utilisateur manquant'
       });
     }
-  },
 
-  /**
-   * Refresh token pour régénérer les tokens expirés
-   */
-  async refreshToken(req, res) {
-    try {
-      console.log('🔄 Refresh token - User ID:', req.user.id);
-      
-      const user = await User.findByIdWithoutPassword(req.user.id);
-      
-      if (!user) {
-        console.log('❌ Utilisateur non trouvé pour refresh ID:', req.user.id);
-        return res.status(404).json({
-          success: false,
-          message: 'Utilisateur non trouvé'
-        });
-      }
-
-      // Générer un nouveau token
-      const newToken = generateToken(user.id_utilisateur, user.telephone, user.role);
-      
-      console.log('✅ Nouveau token généré pour ID:', req.user.id);
-
-      res.json({
-        success: true,
-        token: newToken,
-        user: {
-          id: user.id_utilisateur,
-          fullname: user.fullname,
-          telephone: user.telephone,
-          role: user.role,
-          est_actif: user.est_actif,
-          date_inscription: user.date_inscription
-        }
-      });
-
-    } catch (error) {
-      console.error('❌ Refresh token error:', error);
-      res.status(500).json({
+    const user = await User.findByIdWithoutPassword(userId);
+    
+    if (!user) {
+      console.log('❌ Utilisateur non trouvé pour verify-token ID:', userId);
+      return res.status(404).json({
         success: false,
-        message: 'Erreur lors du renouvellement du token'
+        valid: false,
+        message: 'Utilisateur non trouvé'
       });
     }
-  },
+
+    if (!user.est_actif) {
+      console.log('🚫 Compte désactivé pour verify-token ID:', userId);
+      return res.status(403).json({
+        success: false,
+        valid: false,
+        message: 'Ce compte a été désactivé'
+      });
+    }
+
+    console.log('✅ Token valide pour ID:', userId);
+
+    res.json({
+      success: true,
+      valid: true,
+      user: {
+        id: user.id_utilisateur,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        date_inscription: user.date_inscription
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Verify token error:', error);
+    res.status(500).json({
+      success: false,
+      valid: false,
+      message: 'Erreur lors de la vérification du token',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+},
+
+/**
+ * Refresh token pour régénérer les tokens expirés
+ */
+async refreshToken(req, res) {
+  try {
+    // ✅ CORRECTION
+    const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+    
+    console.log('🔄 Refresh token - User ID:', userId);
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'ID utilisateur manquant'
+      });
+    }
+
+    const user = await User.findByIdWithoutPassword(userId);
+    
+    if (!user) {
+      console.log('❌ Utilisateur non trouvé pour refresh ID:', userId);
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    const newToken = generateToken(user.id_utilisateur, user.telephone, user.role);
+    
+    console.log('✅ Nouveau token généré pour ID:', userId);
+
+    res.json({
+      success: true,
+      token: newToken,
+      user: {
+        id: user.id_utilisateur,
+        fullname: user.fullname,
+        telephone: user.telephone,
+        role: user.role,
+        est_actif: user.est_actif,
+        date_inscription: user.date_inscription
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Refresh token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors du renouvellement du token'
+    });
+  }
+},
 
   /**
    * RÉCUPÉRATION DU PROFIL
@@ -1117,25 +1136,36 @@ export const authController = {
     }
   },
 
-  /**
-   * Déconnexion (côté client - pour la documentation)
-   */
-  async logout(req, res) {
-    try {
-      console.log('🚪 Logout - User ID:', req.user.id);
-      
-      res.json({
-        success: true,
-        message: 'Déconnexion réussie - Veuillez supprimer le token côté client'
-      });
-    } catch (error) {
-      console.error('❌ Logout error:', error);
-      res.status(500).json({
+/**
+ * Déconnexion (côté client - pour la documentation)
+ */
+async logout(req, res) {
+  try {
+    // ✅ CORRECTION
+    const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+    
+    console.log('🚪 Logout - User ID:', userId);
+
+    if (!userId) {
+      return res.status(400).json({
         success: false,
-        message: 'Erreur lors de la déconnexion'
+        message: 'ID utilisateur manquant'
       });
     }
-  },
+
+    res.json({
+      success: true,
+      message: 'Déconnexion réussie - Veuillez supprimer le token côté client'
+    });
+
+  } catch (error) {
+    console.error('❌ Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la déconnexion'
+    });
+  }
+},
 
   /**
    * ENREGISTREMENT DU TOKEN EXPO
