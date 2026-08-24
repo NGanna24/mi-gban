@@ -4,7 +4,7 @@ import AgentDemandeController from '../controllers/AgentDemandeController.js';
 import { authenticateToken } from '../middlewares/authMiddleware.js';
 
 const router = express.Router();
-
+ 
 // =========================================================================
 // ROUTES PROTÉGÉES
 // =========================================================================

@@ -176,7 +176,8 @@ export const suiviController = {
    */
   async mesSuiveurs(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('👥 Mes suiveurs - Agence:', id_agence);
 
@@ -574,7 +575,8 @@ export const suiviController = {
   async getClientDetails(req, res) {
     try {
       const { id_client } = req.params;
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('📋 Détails client - Agence:', id_agence, 'Client:', id_client);
 
@@ -603,7 +605,8 @@ export const suiviController = {
    */
   async getClientStats(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { periode = 'mois' } = req.query;
 
       console.log('📊 Statistiques clients - Agence:', id_agence, 'Période:', periode);
@@ -629,7 +632,8 @@ export const suiviController = {
    */
   async searchClients(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { 
         searchTerm = '', 
         notifications_actives, 
@@ -668,7 +672,8 @@ export const suiviController = {
   async getClientInteractions(req, res) {
     try {
       const { id_client } = req.params;
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { limit = 10 } = req.query;
 
       console.log('💬 Interactions client - Agence:', id_agence, 'Client:', id_client);
@@ -707,7 +712,8 @@ export const suiviController = {
   async getClientActivity(req, res) {
     try {
       const { id_client } = req.params;
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { limit = 10 } = req.query;
 
       console.log('📈 Activité client - Agence:', id_agence, 'Client:', id_client);
@@ -746,7 +752,8 @@ export const suiviController = {
   async getClientPreferences(req, res) {
     try {
       const { id_client } = req.params;
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('⚙️ Préférences client - Agence:', id_agence, 'Client:', id_client);
 
@@ -774,7 +781,8 @@ export const suiviController = {
    */
   async getFollowersWithNotifications(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('🔔 Suiveurs avec notifications - Agence:', id_agence);
 
@@ -802,7 +810,8 @@ export const suiviController = {
    */
   async getGrowthStats(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { startDate, endDate } = req.query;
 
       console.log('📈 Croissance suiveurs - Agence:', id_agence, 'Période:', startDate, '-', endDate);
@@ -835,7 +844,8 @@ export const suiviController = {
    */
   async getEngagementMetrics(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('📊 Métriques engagement - Agence:', id_agence);
 
@@ -857,7 +867,8 @@ export const suiviController = {
 
 async getReservationsByAgency(req, res) {
   try {
-    const id_agence = req.user.id;
+        const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
     const filters = req.query;
      
     console.log('=== DEBUG RESERVATIONS ===');
@@ -961,7 +972,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getReservationStats(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { periode = 'mois' } = req.query;
 
       console.log('📊 Statistiques réservations - Agence:', id_agence, 'Période:', periode);
@@ -987,7 +999,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getUpcomingVisits(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { limit = 10 } = req.query;
 
       console.log('🗓️ Visites à venir - Agence:', id_agence, 'Limit:', limit);
@@ -1013,7 +1026,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getCancelledReservations(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { page = 1, limit = 20 } = req.query;
 
       console.log('❌ Réservations annulées - Agence:', id_agence, 'Page:', page, 'Limit:', limit);
@@ -1039,7 +1053,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getConfirmedReservations(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { page = 1, limit = 20 } = req.query;
 
       console.log('✅ Réservations confirmées - Agence:', id_agence, 'Page:', page, 'Limit:', limit);
@@ -1065,7 +1080,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getPendingReservations(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { page = 1, limit = 20 } = req.query;
 
       console.log('⏳ Réservations en attente - Agence:', id_agence, 'Page:', page, 'Limit:', limit);
@@ -1092,7 +1108,8 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
   async getClientReservations(req, res) {
     try {
       const { id_client } = req.params;
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { page = 1, limit = 10 } = req.query;
 
       console.log('📅 Réservations client - Agence:', id_agence, 'Client:', id_client, 'Page:', page);
@@ -1422,7 +1439,7 @@ async updateReservationStatus(req, res) {
 },
 async getDashboardMetrics(req, res) {
   try {
-    const id_agence = req.user.id;
+    const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
     console.log('📈 Métriques dashboard - Agence:', id_agence);
 
@@ -1489,7 +1506,7 @@ async getDashboardMetrics(req, res) {
    */
   async getTopPerformingProperties(req, res) {
     try {
-      const id_agence = req.user.id;
+    const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { limit = 5 } = req.query;
 
       console.log('🏆 Propriétés performantes - Agence:', id_agence, 'Limit:', limit);
@@ -1515,7 +1532,7 @@ async getDashboardMetrics(req, res) {
    */
   async getRevenueStats(req, res) {
     try {
-      const id_agence = req.user.id;
+    const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { periode = 'mois' } = req.query;
 
       console.log('💰 Statistiques revenus - Agence:', id_agence, 'Période:', periode);
@@ -1541,7 +1558,8 @@ async getDashboardMetrics(req, res) {
    */
   async getRecommendedPropertiesForFollowers(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { limit = 5 } = req.query;
 
       console.log('🎯 Recommandations propriétés - Agence:', id_agence, 'Limit:', limit);
@@ -1601,7 +1619,8 @@ async getDashboardMetrics(req, res) {
    */
   async syncFollowersData(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('🔄 Synchronisation données suiveurs - Agence:', id_agence);
 
@@ -1658,7 +1677,8 @@ async getDashboardMetrics(req, res) {
    */
   async exportData(req, res) {
     try {
-      const id_agence = req.user.id;
+          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
       const { format = 'json' } = req.query;
 
       console.log('📤 Export données - Agence:', id_agence, 'Format:', format);
@@ -1743,4 +1763,4 @@ async getDashboardMetrics(req, res) {
 
 };
 
-export default suiviController;
+export default suiviController; 

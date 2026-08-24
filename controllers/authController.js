@@ -1056,10 +1056,11 @@ async refreshToken(req, res) {
    * Mise à jour du profil utilisateur (fullname et telephone)
    * @deprecated Utiliser update() à la place
    */
-  async updateProfile(req, res) {
+  async updateProfile(req, res) { 
     try {
       const { fullname, telephone } = req.body;
-      const userId = req.user.id;
+      const userId = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+
 
       console.log('✏️ Update profile - User ID:', userId, 'Data:', { fullname, telephone });
 

@@ -1,9 +1,9 @@
 // middlewares/upload.js
 import multer from 'multer';
-import path from 'path';
+import path from 'path'; 
 import fs from 'fs';
 
-// Chemins des dossiers
+// Chemins des dossiers 
 const uploadsBaseDir = './uploads';
 const avatarsDir = './uploads/avatars';
 const tempDir = './uploads/temp';
@@ -14,7 +14,7 @@ const createUploadDirs = () => {
     if (!fs.existsSync(uploadsBaseDir)) {
       fs.mkdirSync(uploadsBaseDir, { recursive: true });
       console.log('✅ Dossier uploads créé');
-    }
+    } 
     
     if (!fs.existsSync(avatarsDir)) {
       fs.mkdirSync(avatarsDir, { recursive: true });
@@ -107,7 +107,7 @@ const handleUploadErrors = (error, req, res, next) => {
   if (error instanceof multer.MulterError) {
     console.error('❌ Erreur Multer:', error.code);
     
-    switch (error.code) {
+    switch (error.code) { 
       case 'LIMIT_FILE_SIZE':
         return res.status(400).json({
           success: false,

@@ -18,7 +18,7 @@ const storage = multer.diskStorage({
         cb(null, uniqueName);
     }
 });
-
+ 
 const fileFilter = (req, file, cb) => {
     if (UPLOAD_CONFIG.ALLOWED_TYPES.includes(file.mimetype)) {
         cb(null, true);

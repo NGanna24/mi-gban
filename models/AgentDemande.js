@@ -2,17 +2,57 @@ import { pool } from '../config/db.js';
 
 class AgentDemande {
   /**
+   * Helper pour parser les champs JSON en toute sécurité
+   */
+  static safeJsonParse(value) {
+    if (!value || value === '') {
+      return [];
+    }
+    
+    if (Array.isArray(value)) {
+      return value;
+    }
+    
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+        return Object.values(parsed);
+      } catch (e) {
+        if (value.trim() === '') {
+          return [];
+        }
+        const cleaned = value
+          .replace(/[\[\]"']/g, '')
+          .trim();
+        
+        if (cleaned === '') {
+          return [];
+        }
+        
+        return cleaned
+          .split(',')
+          .map(item => item.trim())
+          .filter(item => item !== '');
+      }
+    }
+    
+    return [];
+  }
+
+  /**
    * Créer une nouvelle demande d'agent
    */
   static async create(demandeData) {
     const connection = await pool.getConnection(); 
     
     try {
-      await connection.beginTransaction();
+      await connection.beginTransaction(); 
 
       console.log('Données reçues pour création:', demandeData);
 
-      // 1. Créer la demande principale
       const [demandeResult] = await connection.execute(`
         INSERT INTO AgentDemande (
           id_utilisateur,
@@ -30,8 +70,20 @@ class AgentDemande {
           propertyTypes,
           coverageAreas,
           statut,
-          date_soumission
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'soumise', NOW())
+          date_soumission,
+          propertyAddress,
+          propertyType,
+          propertySurface,
+          numberOfRooms,
+          propertyDescription,
+          propertyTitle,
+          propertyPhotos,
+          establishmentName,
+          establishmentType,
+          establishmentAddress,
+          establishmentDescription,
+          establishmentPhotos
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         demandeData.id_utilisateur,
         demandeData.fullName || '',
@@ -46,40 +98,84 @@ class AgentDemande {
         parseInt(demandeData.yearsOfExperience) || 0,
         demandeData.website || null,
         JSON.stringify(demandeData.propertyTypes || []),
-        JSON.stringify(demandeData.coverageAreas || [])
+        JSON.stringify(demandeData.coverageAreas || []),
+        demandeData.statut || 'soumise',
+        demandeData.propertyAddress || null,
+        demandeData.propertyType || null,
+        demandeData.propertySurface || null,
+        demandeData.numberOfRooms || null,
+        demandeData.propertyDescription || null,
+        demandeData.propertyTitle || null,
+        JSON.stringify(demandeData.propertyPhotos || []),
+        demandeData.establishmentName || null,
+        demandeData.establishmentType || null,
+        demandeData.establishmentAddress || null,
+        demandeData.establishmentDescription || null,
+        JSON.stringify(demandeData.establishmentPhotos || [])
       ]);
 
       const id_demande = demandeResult.insertId;
       console.log('Demande créée avec ID:', id_demande);
 
-      // 2. Traiter les documents uploadés
+      // 2. Traiter les documents uploadés avec gestion de doublons
       if (demandeData.documents && demandeData.documents.length > 0) {
         console.log('Documents à insérer:', demandeData.documents.length);
         
-        const documentsPromises = demandeData.documents.map(doc => 
-          connection.execute(`
-            INSERT INTO AgentDocument (
-              id_demande,
-              id_utilisateur,
-              documentType,
-              fileName,
-              filePath,
-              mimeType,
-              fileSize
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-          `, [
-            id_demande,
-            demandeData.id_utilisateur,
-            doc.documentType,
-            doc.fileName,
-            doc.filePath,
-            doc.mimeType,
-            doc.fileSize
-          ])
-        );
+        // Dédupliquer les documents par documentType
+        const uniqueDocs = new Map();
+        for (const doc of demandeData.documents) {
+          // Si le même documentType existe déjà, on garde le dernier
+          uniqueDocs.set(doc.documentType, doc);
+        }
         
-        await Promise.all(documentsPromises);
-        console.log('Documents insérés avec succès');
+        const uniqueDocuments = Array.from(uniqueDocs.values());
+        console.log(`📊 ${demandeData.documents.length} documents -> ${uniqueDocuments.length} uniques`);
+        
+        // Insérer les documents uniques
+        for (const doc of uniqueDocuments) {
+          try {
+            await connection.execute(`
+              INSERT INTO AgentDocument (
+                id_demande,
+                id_utilisateur,
+                documentType,
+                fileName,
+                filePath,
+                mimeType,
+                fileSize
+              ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [
+              id_demande,
+              demandeData.id_utilisateur,
+              doc.documentType,
+              doc.fileName,
+              doc.filePath,
+              doc.mimeType,
+              doc.fileSize
+            ]);
+            console.log(`✅ Document inséré: ${doc.documentType}`);
+          } catch (error) {
+            if (error.code === 'ER_DUP_ENTRY') {
+              // Mettre à jour le document existant
+              console.log(`🔄 Mise à jour du document: ${doc.documentType}`);
+              await connection.execute(`
+                UPDATE AgentDocument 
+                SET fileName = ?, filePath = ?, mimeType = ?, fileSize = ?, uploadedAt = NOW()
+                WHERE id_demande = ? AND documentType = ?
+              `, [
+                doc.fileName,
+                doc.filePath,
+                doc.mimeType,
+                doc.fileSize,
+                id_demande,
+                doc.documentType
+              ]);
+              console.log(`✅ Document mis à jour: ${doc.documentType}`);
+            } else {
+              throw error;
+            }
+          }
+        }
       }
 
       await connection.commit();
@@ -94,12 +190,12 @@ class AgentDemande {
 
     } catch (error) {
       await connection.rollback();
-      console.error('Erreur création demande agent:', error);
+      console.error('❌ Erreur création demande agent:', error);
       
       if (error.code === 'ER_DUP_ENTRY') {
-        if (error.sqlMessage.includes('professionalCardNumber')) {
+        if (error.sqlMessage && error.sqlMessage.includes('professionalCardNumber')) {
           throw new Error('Ce numéro de carte professionnelle est déjà utilisé');
-        } else if (error.sqlMessage.includes('id_utilisateur')) {
+        } else if (error.sqlMessage && error.sqlMessage.includes('id_utilisateur')) {
           throw new Error('Vous avez déjà une demande en cours');
         }
       }
@@ -110,59 +206,106 @@ class AgentDemande {
     }
   }
 
-  /** 
-   * Ajouter un document à une demande
+  /**
+   * Ajouter un document à une demande - Version robuste
    */
   static async addDocument(documentData) {
-    try {
-      console.log('Ajout document:', documentData);
-      
-      const [result] = await pool.execute(`
-        INSERT INTO AgentDocument (
-          id_demande,
-          id_utilisateur,
-          documentType,
-          fileName,
-          filePath,
-          mimeType,
-          fileSize,
-          uploadedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
-      `, [
-        documentData.id_demande,
-        documentData.id_utilisateur,
-        documentData.documentType,
-        documentData.fileName,
-        documentData.filePath,
-        documentData.mimeType,
-        documentData.fileSize || 0
-      ]);
-
-      console.log('Document ajouté avec ID:', result.insertId);
-      return result.insertId;
-    } catch (error) {
-      console.error('Erreur ajout document:', error);
-      
-      if (error.code === 'ER_DUP_ENTRY') {
-        await pool.execute(`
-          UPDATE AgentDocument 
-          SET fileName = ?, filePath = ?, mimeType = ?, fileSize = ?, uploadedAt = NOW()
-          WHERE id_demande = ? AND documentType = ?
+    const maxRetries = 3;
+    let attempt = 0;
+    
+    while (attempt < maxRetries) {
+      try {
+        console.log(`📄 Ajout document: ${documentData.documentType} (tentative ${attempt + 1})`);
+        
+        // Vérifier d'abord si le document existe déjà
+        const [existing] = await pool.execute(
+          'SELECT id_document FROM AgentDocument WHERE id_demande = ? AND documentType = ?',
+          [documentData.id_demande, documentData.documentType]
+        );
+        
+        if (existing.length > 0) {
+          // Mettre à jour le document existant
+          await pool.execute(`
+            UPDATE AgentDocument 
+            SET fileName = ?, filePath = ?, mimeType = ?, fileSize = ?, uploadedAt = NOW()
+            WHERE id_demande = ? AND documentType = ?
+          `, [
+            documentData.fileName,
+            documentData.filePath,
+            documentData.mimeType,
+            documentData.fileSize || 0,
+            documentData.id_demande,
+            documentData.documentType
+          ]);
+          
+          console.log(`✅ Document mis à jour: ${documentData.documentType}`);
+          return existing[0].id_document;
+        }
+        
+        // Insérer le nouveau document
+        const [result] = await pool.execute(`
+          INSERT INTO AgentDocument (
+            id_demande,
+            id_utilisateur,
+            documentType,
+            fileName,
+            filePath,
+            mimeType,
+            fileSize,
+            uploadedAt
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())
         `, [
+          documentData.id_demande,
+          documentData.id_utilisateur,
+          documentData.documentType,
           documentData.fileName,
           documentData.filePath,
           documentData.mimeType,
-          documentData.fileSize || 0,
-          documentData.id_demande,
-          documentData.documentType
+          documentData.fileSize || 0
         ]);
+
+        console.log(`✅ Nouveau document ajouté avec ID: ${result.insertId}`);
+        return result.insertId;
         
-        console.log('Document mis à jour (duplicate entry)');
-        return 'updated';
+      } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY' && attempt < maxRetries - 1) {
+          attempt++;
+          console.log(`⚠️ Conflit sur ${documentData.documentType}, tentative ${attempt + 1}/${maxRetries}`);
+          // Attendre un peu avant de réessayer
+          await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+          continue;
+        }
+        
+        // Si on est en conflit et qu'on a épuisé les tentatives, essayer une mise à jour directe
+        if (error.code === 'ER_DUP_ENTRY') {
+          console.log(`🔄 Dernier recours: mise à jour directe pour ${documentData.documentType}`);
+          try {
+            await pool.execute(`
+              UPDATE AgentDocument 
+              SET fileName = ?, filePath = ?, mimeType = ?, fileSize = ?, uploadedAt = NOW()
+              WHERE id_demande = ? AND documentType = ?
+            `, [
+              documentData.fileName,
+              documentData.filePath,
+              documentData.mimeType,
+              documentData.fileSize || 0,
+              documentData.id_demande,
+              documentData.documentType
+            ]);
+            console.log(`✅ Document mis à jour (recours): ${documentData.documentType}`);
+            return;
+          } catch (updateError) {
+            console.error(`❌ Échec recours pour ${documentData.documentType}:`, updateError);
+            throw updateError;
+          }
+        }
+        
+        console.error(`❌ Erreur ajout document ${documentData.documentType}:`, error);
+        throw error;
       }
-      
-      throw error;
     }
+    
+    throw new Error(`Échec après ${maxRetries} tentatives pour ${documentData.documentType}`);
   }
 
   /**
@@ -198,14 +341,10 @@ class AgentDemande {
 
       const demande = demandes[0];
       
-      try {
-        demande.propertyTypes = JSON.parse(demande.propertyTypes || '[]');
-        demande.coverageAreas = JSON.parse(demande.coverageAreas || '[]');
-      } catch (e) {
-        console.error('Erreur parsing JSON:', e);
-        demande.propertyTypes = [];
-        demande.coverageAreas = [];
-      }
+      demande.propertyTypes = this.safeJsonParse(demande.propertyTypes);
+      demande.coverageAreas = this.safeJsonParse(demande.coverageAreas);
+      demande.propertyPhotos = this.safeJsonParse(demande.propertyPhotos);
+      demande.establishmentPhotos = this.safeJsonParse(demande.establishmentPhotos);
       
       const [documents] = await pool.execute(`
         SELECT 
@@ -256,13 +395,10 @@ class AgentDemande {
 
       const demande = demandes[0];
       
-      try {
-        demande.propertyTypes = JSON.parse(demande.propertyTypes || '[]');
-        demande.coverageAreas = JSON.parse(demande.coverageAreas || '[]');
-      } catch (e) {
-        demande.propertyTypes = [];
-        demande.coverageAreas = [];
-      }
+      demande.propertyTypes = this.safeJsonParse(demande.propertyTypes);
+      demande.coverageAreas = this.safeJsonParse(demande.coverageAreas);
+      demande.propertyPhotos = this.safeJsonParse(demande.propertyPhotos);
+      demande.establishmentPhotos = this.safeJsonParse(demande.establishmentPhotos);
       
       const [documents] = await pool.execute(`
         SELECT * FROM AgentDocument 
@@ -279,117 +415,102 @@ class AgentDemande {
     }
   }
 
-// Dans models/AgentDemande.js
-
-static async getAll(filters = {}, page = 1, limit = 20) {
+  /**
+   * Obtenir toutes les demandes (admin)
+   */
+  static async getAll(filters = {}, page = 1, limit = 20) {
     try {
-        const L = Number(limit) || 20;
-        const P = Number(page) || 1;
-        const offset = (P - 1) * L;
+      const L = Number(limit) || 20;
+      const P = Number(page) || 1;
+      const offset = (P - 1) * L;
 
-        let whereClauses = [];
-        let queryParams = [];
+      let whereClauses = [];
+      let queryParams = [];
 
-        if (filters.statut) {
-            const statusArray = filters.statut.split(',').map(s => s.trim());
-            const placeholders = statusArray.map(() => '?').join(',');
-            whereClauses.push(`d.statut IN (${placeholders})`);
-            queryParams.push(...statusArray);
-        }
+      if (filters.statut) {
+        const statusArray = filters.statut.split(',').map(s => s.trim());
+        const placeholders = statusArray.map(() => '?').join(',');
+        whereClauses.push(`d.statut IN (${placeholders})`);
+        queryParams.push(...statusArray);
+      }
 
-        const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+      if (filters.recherche) {
+        whereClauses.push(`(u.fullname LIKE ? OR u.email LIKE ? OR d.professionalCardNumber LIKE ?)`);
+        const search = `%${filters.recherche}%`;
+        queryParams.push(search, search, search);
+      }
 
-        const sql = `
-            SELECT 
-                d.*, 
-                u.fullname, u.telephone, u.role,
-                p.avatar, p.ville, p.pays
-            FROM AgentDemande d
-            LEFT JOIN Utilisateur u ON d.id_utilisateur = u.id_utilisateur
-            LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
-            ${whereSql}
-            ORDER BY d.date_creation DESC
-            LIMIT ? OFFSET ?
-        `;
+      if (filters.date_debut && filters.date_fin) {
+        whereClauses.push(`DATE(d.date_creation) BETWEEN ? AND ?`);
+        queryParams.push(filters.date_debut, filters.date_fin);
+      }
 
-        const finalParams = [...queryParams, L, offset];
-        const [rows] = await pool.query(sql, finalParams);
+      const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-        // Fonction helper pour parser les données JSON/CSV
-        const parseField = (fieldValue) => {
-            if (!fieldValue || fieldValue === '') {
-                return [];
-            }
-            
-            try {
-                // Essayer de parser comme JSON d'abord
-                const parsed = JSON.parse(fieldValue);
-                if (Array.isArray(parsed)) {
-                    return parsed;
-                }
-                // Si c'est un objet mais pas un array, le convertir en array
-                return Object.values(parsed);
-            } catch (e) {
-                // Si ce n'est pas du JSON valide, traiter comme CSV
-                if (typeof fieldValue === 'string') {
-                    // Nettoyer et séparer par virgule
-                    const cleaned = fieldValue
-                        .replace(/[\[\]"']/g, '') // Supprimer les crochets et guillemets
-                        .trim();
-                    
-                    if (cleaned === '') {
-                        return [];
-                    }
-                    
-                    return cleaned
-                        .split(',')
-                        .map(item => item.trim())
-                        .filter(item => item !== '');
-                }
-                return [];
-            }
-        };
+      let orderBy = 'ORDER BY d.date_creation DESC';
+      if (filters.sort === 'date_asc') {
+        orderBy = 'ORDER BY d.date_creation ASC';
+      } else if (filters.sort === 'name') {
+        orderBy = 'ORDER BY u.fullname ASC';
+      } else if (filters.sort === 'status') {
+        orderBy = 'ORDER BY d.statut ASC';
+      }
 
-        // Charger les documents pour chaque demande
-        const demandesAvecDocuments = await Promise.all(
-            rows.map(async (demande) => {
-                // Récupérer les documents pour cette demande
-                const [documents] = await pool.query(
-                    `SELECT * FROM AgentDocument WHERE id_demande = ? ORDER BY documentType`,
-                    [demande.id_demande]
-                );
-                
-                // Parser les champs JSON/CSV avec la fonction helper
-                demande.propertyTypes = parseField(demande.propertyTypes);
-                demande.coverageAreas = parseField(demande.coverageAreas);
-                
-                // Ajouter les documents
-                demande.documents = documents;
-                demande.documentCount = documents.length;
-                
-                return demande;
-            })
-        );
+      const sql = `
+        SELECT 
+          d.*, 
+          u.fullname, u.telephone, u.role,
+          p.avatar, p.ville, p.pays
+        FROM AgentDemande d
+        LEFT JOIN Utilisateur u ON d.id_utilisateur = u.id_utilisateur
+        LEFT JOIN Profile p ON u.id_utilisateur = p.id_utilisateur
+        ${whereSql}
+        ${orderBy}
+        LIMIT ? OFFSET ?
+      `;
 
-        // Requête pour le total
-        const [countRows] = await pool.query(
-            `SELECT COUNT(*) as total FROM AgentDemande d ${whereSql}`, 
-            queryParams
-        );
+      const finalParams = [...queryParams, L, offset];
+      const [rows] = await pool.query(sql, finalParams);
 
-        return {
-            demandes: demandesAvecDocuments,
-            total: countRows[0]?.total || 0,
-            page: P,
-            limit: L,
-            totalPages: Math.ceil((countRows[0]?.total || 0) / L)
-        };
+      const demandesAvecDocuments = await Promise.all(
+        rows.map(async (demande) => {
+          const [documents] = await pool.query(
+            `SELECT * FROM AgentDocument WHERE id_demande = ? ORDER BY documentType`,
+            [demande.id_demande]
+          );
+          
+          demande.propertyTypes = this.safeJsonParse(demande.propertyTypes);
+          demande.coverageAreas = this.safeJsonParse(demande.coverageAreas);
+          demande.propertyPhotos = this.safeJsonParse(demande.propertyPhotos);
+          demande.establishmentPhotos = this.safeJsonParse(demande.establishmentPhotos);
+          
+          demande.documents = documents;
+          demande.documentCount = documents.length;
+          
+          return demande;
+        })
+      );
+
+      let countSql = `SELECT COUNT(*) as total FROM AgentDemande d`;
+      if (whereClauses.length > 0) {
+        countSql += ` ${whereSql}`;
+      }
+      
+      const [countRows] = await pool.query(countSql, queryParams);
+
+      return {
+        demandes: demandesAvecDocuments,
+        total: countRows[0]?.total || 0,
+        page: P,
+        limit: L,
+        totalPages: Math.ceil((countRows[0]?.total || 0) / L)
+      };
     } catch (error) {
-        console.error("Erreur dans AgentDemande.getAll:", error.message);
-        console.error("Stack:", error.stack);
-        throw error;
+      console.error("Erreur dans AgentDemande.getAll:", error.message);
+      console.error("Stack:", error.stack);
+      throw error;
     }
-}
+  }
 
   /**
    * Mettre à jour le statut d'une demande
@@ -401,7 +522,7 @@ static async getAll(filters = {}, page = 1, limit = 20) {
       await connection.beginTransaction();
 
       const [currentDemande] = await connection.execute(
-        'SELECT statut FROM AgentDemande WHERE id_demande = ?',
+        'SELECT statut, id_utilisateur FROM AgentDemande WHERE id_demande = ?',
         [id_demande]
       );
 
@@ -411,7 +532,6 @@ static async getAll(filters = {}, page = 1, limit = 20) {
 
       const oldStatus = currentDemande[0].statut;
 
-      // Valider la transition de statut
       const validTransitions = {
         'brouillon': ['soumise'],
         'soumise': ['en_revision', 'rejetee'],
@@ -428,10 +548,10 @@ static async getAll(filters = {}, page = 1, limit = 20) {
       const updateParams = [newStatus];
 
       if (newStatus === 'approuvee') {
-        updateQuery += ', date_mise_a_jour = NOW()';
+        updateQuery += ', date_approbation = NOW()';
       } else if (newStatus === 'rejetee') {
         updateQuery += ', raison_rejet = ?';
-        updateParams.push(notes);
+        updateParams.push(notes || 'Demande rejetée');
       }
 
       updateQuery += ' WHERE id_demande = ?';
@@ -443,19 +563,13 @@ static async getAll(filters = {}, page = 1, limit = 20) {
         throw new Error('Échec de la mise à jour du statut');
       }
 
-      // Si la demande est approuvée, mettre à jour le rôle de l'utilisateur
       if (newStatus === 'approuvee') {
-        const [demandeInfo] = await connection.execute(
-          'SELECT id_utilisateur FROM AgentDemande WHERE id_demande = ?',
-          [id_demande]
+        const userId = currentDemande[0].id_utilisateur;
+        await connection.execute(
+          'UPDATE Utilisateur SET role = "agent" WHERE id_utilisateur = ?',
+          [userId]
         );
-
-        if (demandeInfo.length > 0) {
-          await connection.execute(
-            'UPDATE Utilisateur SET role = "agent" WHERE id_utilisateur = ?',
-            [demandeInfo[0].id_utilisateur]
-          );
-        }
+        console.log(`✅ Utilisateur ${userId} promu au rôle agent`);
       }
 
       await connection.commit();
@@ -534,7 +648,6 @@ static async getAll(filters = {}, page = 1, limit = 20) {
       const missingFields = [];
       if (!profile[0].email) missingFields.push('email');
       if (!profile[0].telephone) missingFields.push('telephone');
-      // if (!profile[0].adresse) missingFields.push('adresse');
 
       if (missingFields.length > 0) {
         return {

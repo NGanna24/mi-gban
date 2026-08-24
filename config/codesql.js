@@ -58,31 +58,69 @@ CREATE TABLE IF NOT EXISTS Profile (
 -- AGENTS
 -- =============================================================================
 
--- Table principale des agents
+-- =============================================================================
+-- TABLE PRINCIPALE DES DEMANDES (AGENT, PROPRIETAIRE, GERANT)
+-- =============================================================================
+
 CREATE TABLE IF NOT EXISTS AgentDemande (
+   
     id_demande INT PRIMARY KEY AUTO_INCREMENT,
     id_utilisateur INT NOT NULL,
+    
+    role_demande ENUM('agent', 'owner', 'manager') DEFAULT 'agent',
+    
+  
     fullName VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL,
     phone VARCHAR(20) NOT NULL,
-    professionalCardNumber VARCHAR(50) NOT NULL,
     identityDocumentNumber VARCHAR(50) NOT NULL,
     identityDocumentType ENUM('cni', 'passport', 'residence_permit') DEFAULT 'cni',
-    agencyName VARCHAR(255),
-    siret VARCHAR(14),
-    professionalAddress TEXT NOT NULL,
+    
+  
+    professionalCardNumber VARCHAR(50) NULL,
+    agencyName VARCHAR(255) NULL,
+    siret VARCHAR(14) NULL,
+    professionalAddress TEXT NULL,
     yearsOfExperience INT DEFAULT 0,
-    website VARCHAR(255),
-    propertyTypes JSON NOT NULL,
-    coverageAreas JSON NOT NULL,
+    website VARCHAR(255) NULL,
+    propertyTypes JSON NULL,
+    coverageAreas JSON NULL,
+    
+  
+    propertyAddress TEXT NULL,
+    propertyType VARCHAR(50) NULL,
+    propertySurface VARCHAR(50) NULL,
+    propertyDescription TEXT NULL,
+    propertyTitle VARCHAR(255) NULL,
+    propertyPhotos JSON NULL,
+    
+
+    establishmentName VARCHAR(255) NULL,
+    establishmentType ENUM('hotel', 'residence', 'guesthouse', 'lodging') NULL,
+    establishmentAddress TEXT NULL,
+    establishmentDescription TEXT NULL,
+    establishmentPhotos JSON NULL,
+    
+    
+    numberOfRooms VARCHAR(10) NULL,
+    
+  
     statut ENUM('brouillon', 'soumise', 'en_revision', 'approuvee', 'rejetee') DEFAULT 'brouillon',
+    raison_rejet TEXT NULL,
     date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
     date_soumission DATETIME NULL,
+    date_approbation DATETIME NULL,
     date_mise_a_jour DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
+
     FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
+    
+  
     INDEX idx_agent_user (id_utilisateur),
-    INDEX idx_agent_statut (statut)
+    INDEX idx_agent_statut (statut),
+    INDEX idx_role_demande (role_demande),
+    INDEX idx_establishment_type (establishmentType),
+    INDEX idx_property_type (propertyType)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table des documents des agents
