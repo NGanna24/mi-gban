@@ -759,12 +759,12 @@ CREATE TABLE IF NOT EXISTS Notification (
         'modification_refused',
 
 
-        'agent_demand_submitted',      
-        'agent_demand_review',          
-        'agent_demand_approved',        
-        'agent_demand_rejected',       
-        'agent_demand_cancelled',       
-        'agent_demand_document_uploaded' ,
+        'demand_submitted',      
+        'demand_review',           
+        'demand_approved',        
+        'demand_rejected',       
+        'demand_cancelled',       
+        'demand_document_uploaded' ,
         
         -- Alertes
         'alert_match',

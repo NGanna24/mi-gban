@@ -412,7 +412,7 @@ async submitDemand(req, res) {
                 documents_uploades: req.files ? Object.keys(req.files).length : 0
             }
         });
-
+ 
     } catch (error) {
         await connection.rollback();
         console.error('❌ Erreur soumission demande:', error); 

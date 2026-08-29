@@ -13,7 +13,7 @@ export const NotificationController = {
       const { page = 1, limit = 50 } = req.query;
 
       if (!userId) {
-        return res.status(401).json({
+        return res.status(401).json({ 
           success: false,
           message: 'Utilisateur non authentifié'
         });

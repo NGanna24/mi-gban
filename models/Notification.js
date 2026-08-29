@@ -11,7 +11,7 @@ class Notification {
       await connection.beginTransaction();
 
       const {
-        id_utilisateur,
+        id_utilisateur, 
         titre,
         message,
         type = 'systeme',

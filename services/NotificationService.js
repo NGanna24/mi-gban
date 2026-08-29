@@ -2706,7 +2706,7 @@ const notifyDemandSubmitted = async (demande, userId) => {
         // ✅ 1. Notification au demandeur
         await saveNotificationToDatabase(
             userId,
-            '📝 Demande soumise avec succès',
+            'Demande soumise avec succès',
             `Votre demande d'inscription en tant que ${roleLabel} a été soumise avec succès. Notre équipe l'examinera dans les plus brefs délais.`,
             'demand_submitted',
             {
@@ -2765,7 +2765,7 @@ const notifyDemandSubmitted = async (demande, userId) => {
     }
 };
 
-/**
+/** 
  * Notification de passage en révision
  */
 const notifyDemandReview = async (demande, userId) => {
