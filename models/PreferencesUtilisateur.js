@@ -32,7 +32,7 @@ class PreferenceUtilisateur {
            SET projet = ?, budget_max = ?, date_mise_a_jour = NOW()
            WHERE id_utilisateur = ?`,
           [projet, budget_max, id_utilisateur]
-        );
+        ); 
 
         console.log('✅ Préférences de base mises à jour');
       } else {

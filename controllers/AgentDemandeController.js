@@ -3,6 +3,8 @@ import path from 'path';
 import fs from 'fs';
 import { pool } from '../config/db.js';
 import AgentDemande from '../models/AgentDemande.js';
+import NotificationService from '../services/NotificationService.js'; // ✅ IMPORT
+
 
 // Configuration de multer
 const storage = multer.diskStorage({
@@ -175,255 +177,264 @@ export const AgentDemandeController = {
     }
   },
 
-  // Soumettre une demande - Version unifiée avec déduplication des documents
-  async submitDemand(req, res) {
+// Soumettre une demande - Version unifiée avec déduplication des documents
+async submitDemand(req, res) {
     const connection = await pool.getConnection();
     
     try {
-      const userId = getUserId(req);
-      
-      if (!userId) {
-        await connection.release();
-        return res.status(401).json({
-          success: false,
-          message: 'Utilisateur non authentifié'
-        });
-      }
+        const userId = getUserId(req);
+        
+        if (!userId) {
+            await connection.release();
+            return res.status(401).json({
+                success: false,
+                message: 'Utilisateur non authentifié'
+            });
+        }
 
-      console.log('📝 Soumission demande - Utilisateur:', userId);
-      console.log('📦 Body reçu:', JSON.stringify(req.body, null, 2));
-      
-      // Récupérer les noms des fichiers reçus
-      const receivedFiles = req.files ? Object.keys(req.files) : [];
-      console.log('📁 Fichiers reçus:', receivedFiles);
+        console.log('📝 Soumission demande - Utilisateur:', userId);
+        console.log('📦 Body reçu:', JSON.stringify(req.body, null, 2));
+        
+        // Récupérer les noms des fichiers reçus
+        const receivedFiles = req.files ? Object.keys(req.files) : [];
+        console.log('📁 Fichiers reçus:', receivedFiles);
 
-      // Récupérer le rôle depuis le body
-      const role = req.body.role || 'agent';
-      console.log('👤 Rôle détecté:', role);
+        // Récupérer le rôle depuis le body
+        const role = req.body.role || 'agent';
+        console.log('👤 Rôle détecté:', role);
 
-      await connection.beginTransaction();
+        await connection.beginTransaction();
 
-      // Vérifier si déjà une demande
-      const existingDemand = await AgentDemande.hasPendingRequest(userId);
-      
-      if (existingDemand) {
-        await connection.rollback();
-        return res.status(400).json({ 
-          success: false,
-          message: `Vous avez déjà une demande en statut: ${existingDemand.statut}`,
-          demande_id: existingDemand.id_demande
-        });
-      }
-
-      // ===== PRÉPARER LES DONNÉES SELON LE RÔLE =====
-      let demandeData = {
-        id_utilisateur: userId,
-        role: role,
-        fullName: req.body.fullName?.trim() || '',
-        email: req.body.email?.trim() || '',
-        phone: req.body.phone?.trim() || '',
-        identityDocumentNumber: req.body.identityDocumentNumber?.trim() || '',
-        identityDocumentType: req.body.identityDocumentType || 'cni',
-        documents: [] // On va stocker les documents ici
-      };
-
-      // === AGENT ===
-      if (role === 'agent') {
-        // Validation des champs obligatoires pour agent
-        const requiredFields = [
-          { field: 'professionalCardNumber', label: 'Numéro de carte professionnelle' },
-          { field: 'identityDocumentNumber', label: 'Numéro de pièce d\'identité' },
-          { field: 'professionalAddress', label: 'Adresse professionnelle' },
-          { field: 'yearsOfExperience', label: 'Années d\'expérience' },
-          { field: 'coverageAreas', label: 'Zones de couverture' }
-        ];
-
-        for (const { field, label } of requiredFields) {
-          if (!req.body[field]) {
+        // Vérifier si déjà une demande
+        const existingDemand = await AgentDemande.hasPendingRequest(userId);
+        
+        if (existingDemand) {
             await connection.rollback();
-            return res.status(400).json({
-              success: false,
-              message: `${label} requis pour un agent`
+            return res.status(400).json({ 
+                success: false,
+                message: `Vous avez déjà une demande en statut: ${existingDemand.statut}`,
+                demande_id: existingDemand.id_demande
             });
-          }
         }
 
-        demandeData = {
-          ...demandeData,
-          professionalCardNumber: req.body.professionalCardNumber?.trim() || '',
-          agencyName: req.body.agencyName?.trim() || null,
-          siret: req.body.siret?.trim() || null,
-          professionalAddress: req.body.professionalAddress?.trim() || '',
-          yearsOfExperience: parseInt(req.body.yearsOfExperience) || 0,
-          website: req.body.website?.trim() || null,
-          propertyTypes: typeof req.body.propertyTypes === 'string' 
-            ? JSON.parse(req.body.propertyTypes) 
-            : (req.body.propertyTypes || []),
-          coverageAreas: typeof req.body.coverageAreas === 'string' 
-            ? JSON.parse(req.body.coverageAreas) 
-            : (req.body.coverageAreas || [])
+        // ===== PRÉPARER LES DONNÉES SELON LE RÔLE =====
+        let demandeData = {
+            id_utilisateur: userId,
+            role: role,
+            fullName: req.body.fullName?.trim() || '',
+            email: req.body.email?.trim() || '',
+            phone: req.body.phone?.trim() || '',
+            identityDocumentNumber: req.body.identityDocumentNumber?.trim() || '',
+            identityDocumentType: req.body.identityDocumentType || 'cni',
+            documents: [] // On va stocker les documents ici
         };
-      }
 
-      // === PROPRIETAIRE ===
-      else if (role === 'owner') {
-        demandeData = {
-          ...demandeData,
-          propertyAddress: req.body.propertyAddress?.trim() || '',
-          propertyType: req.body.propertyType || '',
-          propertySurface: req.body.propertySurface || '',
-          numberOfRooms: req.body.numberOfRooms || '',
-          propertyDescription: req.body.propertyDescription || '',
-          propertyTitle: req.body.propertyTitle || '',
-        };
-      }
+        // === AGENT ===
+        if (role === 'agent') {
+            // Validation des champs obligatoires pour agent
+            const requiredFields = [
+                { field: 'professionalCardNumber', label: 'Numéro de carte professionnelle' },
+                { field: 'identityDocumentNumber', label: 'Numéro de pièce d\'identité' },
+                { field: 'professionalAddress', label: 'Adresse professionnelle' },
+                { field: 'yearsOfExperience', label: 'Années d\'expérience' },
+                { field: 'coverageAreas', label: 'Zones de couverture' }
+            ];
 
-      // === GERANT ===
-      else if (role === 'manager') {
-        demandeData = {
-          ...demandeData,
-          establishmentName: req.body.establishmentName?.trim() || '',
-          establishmentType: req.body.establishmentType || 'hotel',
-          establishmentAddress: req.body.establishmentAddress?.trim() || '',
-          numberOfRooms: req.body.numberOfRooms || '',
-          establishmentDescription: req.body.establishmentDescription || '',
-          yearsOfExperience: parseInt(req.body.yearsOfExperience) || 0,
-          website: req.body.website?.trim() || null,
-        };
-      }
+            for (const { field, label } of requiredFields) {
+                if (!req.body[field]) {
+                    await connection.rollback();
+                    return res.status(400).json({
+                        success: false,
+                        message: `${label} requis pour un agent`
+                    });
+                }
+            }
 
-      // Créer la demande
-      const nouvelleDemande = await AgentDemande.create(demandeData);
-      const demandeId = nouvelleDemande.id_demande;
-      console.log(`✅ Demande créée avec ID: ${demandeId}`);
+            demandeData = {
+                ...demandeData,
+                professionalCardNumber: req.body.professionalCardNumber?.trim() || '',
+                agencyName: req.body.agencyName?.trim() || null,
+                siret: req.body.siret?.trim() || null,
+                professionalAddress: req.body.professionalAddress?.trim() || '',
+                yearsOfExperience: parseInt(req.body.yearsOfExperience) || 0,
+                website: req.body.website?.trim() || null,
+                propertyTypes: typeof req.body.propertyTypes === 'string' 
+                    ? JSON.parse(req.body.propertyTypes) 
+                    : (req.body.propertyTypes || []),
+                coverageAreas: typeof req.body.coverageAreas === 'string' 
+                    ? JSON.parse(req.body.coverageAreas) 
+                    : (req.body.coverageAreas || [])
+            };
+        }
 
-      // ===== TRAITER TOUS LES DOCUMENTS AVEC DÉDUPLICATION =====
-      if (req.files) {
-        console.log('📁 Traitement des documents...');
-        
-        // Utiliser un Map pour dédupliquer par documentType
-        const documentsMap = new Map();
-        
-        for (const fieldName in req.files) {
-          if (req.files[fieldName] && req.files[fieldName][0]) {
-            const file = req.files[fieldName][0];
+        // === PROPRIETAIRE ===
+        else if (role === 'owner') {
+            demandeData = {
+                ...demandeData,
+                propertyAddress: req.body.propertyAddress?.trim() || '',
+                propertyType: req.body.propertyType || '',
+                propertySurface: req.body.propertySurface || '',
+                numberOfRooms: req.body.numberOfRooms || '',
+                propertyDescription: req.body.propertyDescription || '',
+                propertyTitle: req.body.propertyTitle || '',
+            };
+        }
+
+        // === GERANT ===
+        else if (role === 'manager') {
+            demandeData = {
+                ...demandeData,
+                establishmentName: req.body.establishmentName?.trim() || '',
+                establishmentType: req.body.establishmentType || 'hotel',
+                establishmentAddress: req.body.establishmentAddress?.trim() || '',
+                numberOfRooms: req.body.numberOfRooms || '',
+                establishmentDescription: req.body.establishmentDescription || '',
+                yearsOfExperience: parseInt(req.body.yearsOfExperience) || 0,
+                website: req.body.website?.trim() || null,
+            };
+        }
+
+        // Créer la demande
+        const nouvelleDemande = await AgentDemande.create(demandeData);
+        const demandeId = nouvelleDemande.id_demande;
+        console.log(`✅ Demande créée avec ID: ${demandeId}`);
+
+        // ===== TRAITER TOUS LES DOCUMENTS AVEC DÉDUPLICATION =====
+        if (req.files) {
+            console.log('📁 Traitement des documents...');
             
-            // Si le même documentType existe déjà, on garde le dernier (ou on pourrait choisir de garder le premier)
-            // Ici on garde le dernier car il est plus récent
-            documentsMap.set(fieldName, {
-              id_demande: demandeId,
-              id_utilisateur: userId,
-              documentType: fieldName,
-              fileName: file.originalname || path.basename(file.path),
-              filePath: file.path,
-              mimeType: file.mimetype,
-              fileSize: file.size
-            });
-          }
+            // Utiliser un Map pour dédupliquer par documentType
+            const documentsMap = new Map();
+            
+            for (const fieldName in req.files) {
+                if (req.files[fieldName] && req.files[fieldName][0]) {
+                    const file = req.files[fieldName][0];
+                    
+                    // Si le même documentType existe déjà, on garde le dernier (car il est plus récent)
+                    documentsMap.set(fieldName, {
+                        id_demande: demandeId,
+                        id_utilisateur: userId,
+                        documentType: fieldName,
+                        fileName: file.originalname || path.basename(file.path),
+                        filePath: file.path,
+                        mimeType: file.mimetype,
+                        fileSize: file.size
+                    });
+                }
+            }
+            
+            // Convertir Map en tableau et insérer les documents
+            const uniqueDocuments = Array.from(documentsMap.values());
+            console.log(`📊 ${Object.keys(req.files).length} fichiers -> ${uniqueDocuments.length} documents uniques`);
+            
+            // Insérer chaque document avec gestion d'erreur individuelle
+            const results = [];
+            for (const doc of uniqueDocuments) {
+                try {
+                    const result = await AgentDemande.addDocument(doc);
+                    results.push({ success: true, documentType: doc.documentType, id: result });
+                    // ❌ NE PAS METTRE notifyDemandSubmitted ICI (sera envoyé une fois après)
+                } catch (error) {
+                    console.error(`❌ Erreur pour ${doc.documentType}:`, error.message);
+                    results.push({ success: false, documentType: doc.documentType, error: error.message });
+                }
+            }
+            
+            const successCount = results.filter(r => r.success).length;
+            const errorCount = results.filter(r => !r.success).length;
+            console.log(`✅ ${successCount} documents sauvegardés, ${errorCount} erreurs`);
+            
+            // Si des documents ont échoué, on continue quand même
+        }
+
+        // Mettre à jour les infos utilisateur
+        const userUpdates = [];
+        const userValues = [];
+        
+        if (req.body.phone) {
+            userUpdates.push('telephone = ?');
+            userValues.push(req.body.phone.trim());
+        }
+        if (req.body.fullName) {
+            userUpdates.push('fullname = ?');
+            userValues.push(req.body.fullName.trim());
         }
         
-        // Convertir Map en tableau et insérer les documents
-        const uniqueDocuments = Array.from(documentsMap.values());
-        console.log(`📊 ${Object.keys(req.files).length} fichiers -> ${uniqueDocuments.length} documents uniques`);
-        
-        // Insérer chaque document avec gestion d'erreur individuelle
-        const results = [];
-        for (const doc of uniqueDocuments) {
-          try {
-            const result = await AgentDemande.addDocument(doc);
-            results.push({ success: true, documentType: doc.documentType, id: result });
-          } catch (error) {
-            console.error(`❌ Erreur pour ${doc.documentType}:`, error.message);
-            results.push({ success: false, documentType: doc.documentType, error: error.message });
-          }
+        // Mettre à jour le rôle si c'est un agent
+        if (role === 'agent') {
+            userUpdates.push('role = ?');
+            userValues.push('agent');
         }
         
-        const successCount = results.filter(r => r.success).length;
-        const errorCount = results.filter(r => !r.success).length;
-        console.log(`✅ ${successCount} documents sauvegardés, ${errorCount} erreurs`);
-        
-        // Si des documents ont échoué, on continue quand même (les documents existants ont été mis à jour)
-      }
-
-      // Mettre à jour les infos utilisateur
-      const userUpdates = [];
-      const userValues = [];
-      
-      if (req.body.phone) {
-        userUpdates.push('telephone = ?');
-        userValues.push(req.body.phone.trim());
-      }
-      if (req.body.fullName) {
-        userUpdates.push('fullname = ?');
-        userValues.push(req.body.fullName.trim());
-      }
-      
-      // Mettre à jour le rôle si c'est un agent
-      if (role === 'agent') {
-        userUpdates.push('role = ?');
-        userValues.push('agent');
-      }
-      
-      if (userUpdates.length > 0) {
-        userValues.push(userId);
-        await connection.execute(
-          `UPDATE Utilisateur SET ${userUpdates.join(', ')} WHERE id_utilisateur = ?`,
-          userValues
-        );
-      }
-
-      // Mettre à jour l'email dans le profil
-      if (req.body.email) {
-        await connection.execute(
-          `UPDATE Profile SET email = ? WHERE id_utilisateur = ?`,
-          [req.body.email.trim(), userId]
-        );
-      }
-
-      await connection.commit();
-
-      // Message de succès selon le rôle
-      const successMessages = {
-        agent: 'Demande agent soumise avec succès',
-        owner: 'Inscription propriétaire réussie',
-        manager: 'Inscription gérant réussie'
-      };
-
-      res.json({
-        success: true, 
-        message: successMessages[role] || 'Demande soumise avec succès',
-        data: {
-          id_demande: demandeId,
-          date_soumission: nouvelleDemande.date_soumission,
-          statut: role === 'agent' ? STATUS.SUBMITTED : STATUS.APPROVED,
-          role: role
+        if (userUpdates.length > 0) {
+            userValues.push(userId);
+            await connection.execute(
+                `UPDATE Utilisateur SET ${userUpdates.join(', ')} WHERE id_utilisateur = ?`,
+                userValues
+            );
         }
-      });
+
+        // Mettre à jour l'email dans le profil
+        if (req.body.email) {
+            await connection.execute(
+                `UPDATE Profile SET email = ? WHERE id_utilisateur = ?`,
+                [req.body.email.trim(), userId]
+            );
+        }
+
+        await connection.commit();
+
+        // ✅ =============================================
+        // ✅ UNE SEULE NOTIFICATION DE SOUMISSION
+        // ✅ =============================================
+        try {
+            await NotificationService.notifyDemandSubmitted(nouvelleDemande, userId);
+            console.log(`✅ Notification de soumission envoyée à l'utilisateur ${userId}`);
+        } catch (notifError) {
+            console.error('⚠️ Erreur notification soumission:', notifError.message);
+        }
+
+        // Message de succès selon le rôle
+        const successMessages = {
+            agent: 'Demande agent soumise avec succès',
+            owner: 'Inscription propriétaire réussie',
+            manager: 'Inscription gérant réussie'
+        };
+
+        res.json({
+            success: true, 
+            message: successMessages[role] || 'Demande soumise avec succès',
+            data: {
+                id_demande: demandeId,
+                date_soumission: nouvelleDemande.date_soumission,
+                statut: role === 'agent' ? STATUS.SUBMITTED : STATUS.APPROVED,
+                role: role,
+                documents_uploades: req.files ? Object.keys(req.files).length : 0
+            }
+        });
 
     } catch (error) {
-      await connection.rollback();
-      console.error('❌ Erreur soumission demande:', error);
-      console.error('Stack:', error.stack);
-      
-      let errorMessage = 'Erreur lors de la soumission de la demande';
-      
-      if (error.message.includes('déjà utilisé') || error.message.includes('déjà une demande')) {
-        errorMessage = error.message;
-      } else if (error.code === 'ER_DUP_ENTRY') {
-        errorMessage = 'Un document en double a été détecté et automatiquement remplacé.';
-      }
-      
-      res.status(500).json({
-        success: false,
-        message: errorMessage,
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+        await connection.rollback();
+        console.error('❌ Erreur soumission demande:', error); 
+        console.error('Stack:', error.stack);
+        
+        let errorMessage = 'Erreur lors de la soumission de la demande';
+        
+        if (error.message.includes('déjà utilisé') || error.message.includes('déjà une demande')) {
+            errorMessage = error.message;
+        } else if (error.code === 'ER_DUP_ENTRY') {
+            errorMessage = 'Un document en double a été détecté et automatiquement remplacé.';
+        }
+        
+        res.status(500).json({
+            success: false,
+            message: errorMessage,
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     } finally {
-      connection.release();
+        connection.release();
     }
-  },
-
-  // ... (le reste du code reste inchangé - getMyDemand, getDemandDetails, updateDemand, etc.)
+},
   
   // Obtenir ma demande
   async getMyDemand(req, res) {
@@ -600,101 +611,107 @@ export const AgentDemandeController = {
     }
   },
 
-  // Uploader des documents supplémentaires
-  async uploadAdditionalDocuments(req, res) {
+// ✅ Upload de documents supplémentaires - UNE NOTIFICATION PAR LOT
+async uploadAdditionalDocuments(req, res) {
     const connection = await pool.getConnection();
     
     try {
-      const { id } = req.params;
-      const userId = getUserId(req);
-      
-      if (!userId) {
-        await connection.release();
-        return res.status(401).json({
-          success: false,
-          message: 'Utilisateur non authentifié'
-        });
-      }
-      
-      await connection.beginTransaction();
-      
-      const [demande] = await connection.execute(
-        'SELECT statut FROM AgentDemande WHERE id_demande = ? AND id_utilisateur = ?',
-        [id, userId]
-      );
-      
-      if (demande.length === 0) {
-        await connection.rollback();
-        return res.status(404).json({
-          success: false,
-          message: 'Demande non trouvée'
-        });
-      }
-      
-      const allowedStatuses = [STATUS.DRAFT, STATUS.SUBMITTED];
-      if (!allowedStatuses.includes(demande[0].statut)) {
-        await connection.rollback();
-        return res.status(400).json({
-          success: false,
-          message: `Impossible d'ajouter des documents à une demande en statut: ${demande[0].statut}`
-        });
-      }
-      
-      if (req.files) {
-        const documentsPromises = [];
+        const { id } = req.params;
+        const userId = getUserId(req);
         
-        for (const fieldName in req.files) {
-          if (req.files[fieldName] && req.files[fieldName][0]) {
-            const file = req.files[fieldName][0];
-            
-            const documentData = {
-              id_demande: id,
-              id_utilisateur: userId,
-              documentType: fieldName,
-              fileName: file.originalname || path.basename(file.path),
-              filePath: file.path,
-              mimeType: file.mimetype,
-              fileSize: file.size
-            };
-            
-            documentsPromises.push(AgentDemande.addDocument(documentData));
-          }
+        if (!userId) {
+            await connection.release();
+            return res.status(401).json({
+                success: false,
+                message: 'Utilisateur non authentifié'
+            });
         }
         
-        if (documentsPromises.length > 0) {
-          await Promise.all(documentsPromises);
-          await connection.commit();
-          
-          res.json({
-            success: true,
-            message: `${documentsPromises.length} document(s) ajouté(s) avec succès`
-          });
+        await connection.beginTransaction();
+        
+        const [demande] = await connection.execute(
+            'SELECT statut FROM AgentDemande WHERE id_demande = ? AND id_utilisateur = ?',
+            [id, userId]
+        );
+        
+        if (demande.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({
+                success: false,
+                message: 'Demande non trouvée'
+            });
+        }
+        
+        const allowedStatuses = [STATUS.DRAFT, STATUS.SUBMITTED];
+        if (!allowedStatuses.includes(demande[0].statut)) {
+            await connection.rollback();
+            return res.status(400).json({
+                success: false,
+                message: `Impossible d'ajouter des documents à une demande en statut: ${demande[0].statut}`
+            });
+        }
+        
+        const demandeDetails = await AgentDemande.getById(id);
+        
+        if (req.files) {
+            const documentsPromises = [];
+            const documentTypes = [];
+            
+            for (const fieldName in req.files) {
+                if (req.files[fieldName] && req.files[fieldName][0]) {
+                    const file = req.files[fieldName][0];
+                    const documentType = fieldName;
+                    
+                    const documentData = {
+                        id_demande: id,
+                        id_utilisateur: userId,
+                        documentType: documentType,
+                        fileName: file.originalname || path.basename(file.path),
+                        filePath: file.path,
+                        mimeType: file.mimetype,
+                        fileSize: file.size
+                    };
+                    
+                    documentsPromises.push(AgentDemande.addDocument(documentData));
+                    documentTypes.push(documentType);
+                }
+            }
+            
+            if (documentsPromises.length > 0) {
+                await Promise.all(documentsPromises);
+                await connection.commit();
+
+                
+                res.json({
+                    success: true,
+                    message: `${documentsPromises.length} document(s) ajouté(s) avec succès`
+                });
+            } else {
+                await connection.rollback();
+                res.status(400).json({
+                    success: false,
+                    message: 'Aucun fichier valide reçu'
+                });
+            }
         } else {
-          await connection.rollback();
-          res.status(400).json({
-            success: false,
-            message: 'Aucun fichier valide reçu'
-          });
+            await connection.rollback();
+            res.status(400).json({
+                success: false,
+                message: 'Aucun fichier reçu'
+            });
         }
-      } else {
-        await connection.rollback();
-        res.status(400).json({
-          success: false,
-          message: 'Aucun fichier reçu'
-        });
-      }
-      
+        
     } catch (error) {
-      await connection.rollback();
-      console.error('❌ Erreur upload documents additionnels:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Erreur lors du téléchargement des documents'
-      });
+        await connection.rollback();
+        console.error('❌ Erreur upload documents additionnels:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors du téléchargement des documents'
+        });
     } finally {
-      connection.release();
+        connection.release();
     }
-  },
+},
 
   // Supprimer un document
   async deleteDocument(req, res) {
@@ -1153,7 +1170,7 @@ export const AgentDemandeController = {
     }
   },
 
-  // Mettre à jour le statut (admin)
+  // ✅ Mettre à jour le statut (admin) - AVEC NOTIFICATIONS
   async updateStatusAdmin(req, res) {
     const connection = await pool.getConnection();
     
@@ -1178,7 +1195,37 @@ export const AgentDemandeController = {
         });
       }
       
+      // Récupérer la demande avant mise à jour
+      const demande = await AgentDemande.getById(id);
+      if (!demande) {
+        await connection.release();
+        return res.status(404).json({
+          success: false,
+          message: 'Demande non trouvée'
+        });
+      }
+      
       const result = await AgentDemande.updateStatus(id, statut, userId, raison);
+      
+      // ✅ =============================================
+      // ✅ NOTIFICATIONS SELON LE STATUT
+      // ✅ =============================================
+      try {
+          switch (statut) {
+              case 'en_revision':
+                  await NotificationService.notifyDemandReview(demande, demande.id_utilisateur);
+                  break;
+              case 'approuvee':
+                  await NotificationService.notifyDemandApproved(demande, demande.id_utilisateur);
+                  break;
+              case 'rejetee':
+                  await NotificationService.notifyDemandRejected(demande, demande.id_utilisateur, raison);
+                  break;
+          }
+      } catch (notifError) {
+        console.error('⚠️ Erreur notification changement statut:', notifError.message);
+        // Ne pas bloquer la réponse
+      }
       
       res.json({
         success: true,
@@ -1197,7 +1244,7 @@ export const AgentDemandeController = {
     }
   },
 
-  // Rejeter une demande avec raison
+  // ✅ Rejeter une demande - AVEC NOTIFICATIONS
   async rejectDemand(req, res) {
     const connection = await pool.getConnection();
     
@@ -1222,7 +1269,25 @@ export const AgentDemandeController = {
         });
       }
       
+      // Récupérer la demande avant mise à jour
+      const demande = await AgentDemande.getById(id);
+      if (!demande) {
+        await connection.release();
+        return res.status(404).json({
+          success: false,
+          message: 'Demande non trouvée'
+        });
+      }
+      
       const result = await AgentDemande.updateStatus(id, STATUS.REJECTED, userId, raison);
+      
+      // ✅ Notification de rejet
+      try {
+        await NotificationService.notifyAgentDemandRejected(demande, demande.id_utilisateur, raison);
+        console.log(`✅ Notification de rejet envoyée à l'utilisateur ${demande.id_utilisateur}`);
+      } catch (notifError) {
+        console.error('⚠️ Erreur notification rejet:', notifError.message);
+      }
       
       res.json({
         success: true,
@@ -1239,7 +1304,7 @@ export const AgentDemandeController = {
     } finally {
       connection.release();
     }
-  }
+  },
 
 };
 

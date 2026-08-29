@@ -1049,7 +1049,7 @@ static async #formatProprieteAvecMedias(row) {
 
   async getMainMedia() {
     return await Media.findMainByPropertyId(this.id_propriete);
-  }
+  } 
 
 static async searchByCriteria(criteria, id_utilisateur = null, limit = 20, offset = 0) {
   const connection = await pool.getConnection();

@@ -309,11 +309,11 @@ class AgentDemande {
   }
 
   /**
-   * Obtenir une demande par ID utilisateur
-   */
+   * Obtenir une demande par ID utilisateur 
+   */ 
   static async getByUserId(id_utilisateur) {
     try {
-      const [demandes] = await pool.execute(`
+      const [demandes] = await pool.execute(` 
         SELECT 
           d.*,
           u.fullname as userFullname,

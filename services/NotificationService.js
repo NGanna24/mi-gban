@@ -1463,7 +1463,7 @@ const notifyVisitorReservationRequest = async (reservation) => {
       console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
-
+ 
     const title = "Demande envoyée !";
     const body = `Votre demande de visite pour "${propriete_titre}" a été envoyée au propriétaire. Vous recevrez une confirmation sous peu.`;
     
@@ -2685,6 +2685,360 @@ const notifyClientAboutModificationRefused = async (contrat, message = null) => 
   
 };
 
+// ============================================================================
+// NOTIFICATIONS - DEMANDES D'INSCRIPTION (TOUS RÔLES)
+// ============================================================================
+
+/**
+ * Notification de soumission de demande d'inscription (tous rôles)
+ */
+const notifyDemandSubmitted = async (demande, userId) => {
+    try {
+        const roleLabels = {
+            'agent': 'agent immobilier',
+            'owner': 'propriétaire',
+            'manager': 'gérant d\'établissement'
+        };
+        // ✅ CORRECTION : utiliser role_demande
+        const roleValue = demande.role_demande || demande.role || 'agent';
+        const roleLabel = roleLabels[roleValue] || roleValue;
+
+        // ✅ 1. Notification au demandeur
+        await saveNotificationToDatabase(
+            userId,
+            '📝 Demande soumise avec succès',
+            `Votre demande d'inscription en tant que ${roleLabel} a été soumise avec succès. Notre équipe l'examinera dans les plus brefs délais.`,
+            'demand_submitted',
+            {
+                demandeId: demande.id_demande,
+                role: demande.role,
+                roleLabel: roleLabel,
+                dateSoumission: demande.date_soumission,
+                statut: demande.statut
+            }
+        );
+
+        // ✅ 2. Notification aux admins
+        const [admins] = await pool.execute(
+            `SELECT id_utilisateur, expo_push_token 
+             FROM Utilisateur 
+             WHERE role = 'admin' AND est_actif = TRUE
+             AND expo_push_token IS NOT NULL`
+        );
+
+        for (const admin of admins) {
+            await saveNotificationToDatabase(
+                admin.id_utilisateur,
+                '🔔 Nouvelle demande d\'inscription',
+                `${demande.fullName || 'Un utilisateur'} a soumis une demande d'inscription en tant que ${roleLabel}.`,
+                'demand_submitted_admin',
+                {
+                    demandeId: demande.id_demande,
+                    demandeur: demande.fullName,
+                    role: demande.role,
+                    roleLabel: roleLabel,
+                    dateSoumission: demande.date_soumission
+                }
+            );
+
+            if (admin.expo_push_token) {
+                await sendPushNotification(
+                    admin.expo_push_token,
+                    '🔔 Nouvelle demande d\'inscription',
+                    `${demande.fullName || 'Un utilisateur'} demande à devenir ${roleLabel}.`,
+                    {
+                        type: 'demand_submitted_admin',
+                        demandeId: demande.id_demande,
+                        role: demande.role,
+                        screen: 'admin/requests'
+                    },
+                    admin.id_utilisateur,
+                    'demand_submitted_admin'
+                );
+            }
+        }
+
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur notification demande soumise:', error);
+        return false;
+    }
+};
+
+/**
+ * Notification de passage en révision
+ */
+const notifyDemandReview = async (demande, userId) => {
+    try {
+        const roleLabels = {
+            'agent': 'agent immobilier',
+            'owner': 'propriétaire',
+            'manager': 'gérant d\'établissement'
+        };
+        // ✅ CORRECTION : utiliser role_demande
+        const roleValue = demande.role_demande || demande.role || 'agent';
+        const roleLabel = roleLabels[roleValue] || roleValue;
+
+        await saveNotificationToDatabase(
+            userId,
+            '🔍 Demande en révision',
+            `Votre demande d'inscription en tant que ${roleLabel} est actuellement en cours d'examen par notre équipe.`,
+            'demand_review',
+            {
+                demandeId: demande.id_demande,
+                role: demande.role,
+                dateRevision: new Date().toISOString(),
+                statut: demande.statut
+            }
+        );
+
+        const [user] = await pool.execute(
+            'SELECT expo_push_token FROM Utilisateur WHERE id_utilisateur = ?',
+            [userId]
+        );
+
+        if (user[0]?.expo_push_token) {
+            await sendPushNotification(
+                user[0].expo_push_token,
+                '🔍 Demande en révision',
+                `Votre demande d'inscription en tant que ${roleLabel} est en cours d'examen.`,
+                {
+                    type: 'demand_review',
+                    demandeId: demande.id_demande,
+                    role: demande.role,
+                    screen: 'request-details'
+                },
+                userId,
+                'demand_review'
+            );
+        }
+
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur notification révision:', error);
+        return false;
+    }
+};
+
+/**
+ * Notification d'approbation
+ */
+const notifyDemandApproved = async (demande, userId) => {
+    try {
+        const roleLabels = {
+            'agent': 'agent immobilier',
+            'owner': 'propriétaire',
+            'manager': 'gérant d\'établissement'
+        };
+        // ✅ CORRECTION : utiliser role_demande
+        const roleValue = demande.role_demande || demande.role || 'agent';
+        const roleLabel = roleLabels[roleValue] || roleValue;
+        
+        // Message de succès selon le rôle
+        const successMessages = {
+            'agent': 'Vous pouvez maintenant publier des propriétés et gérer vos clients.',
+            'owner': 'Vous pouvez maintenant publier vos biens et gérer vos locations.',
+            'manager': 'Vous pouvez maintenant gérer votre établissement et vos réservations.'
+        };
+        const successMessage = successMessages[demande.role] || 'Vous pouvez maintenant utiliser toutes les fonctionnalités.';
+
+        await saveNotificationToDatabase(
+            userId,
+            '✅ Félicitations !',
+            `Votre demande d'inscription en tant que ${roleLabel} a été approuvée ! ${successMessage}`,
+            'demand_approved',
+            {
+                demandeId: demande.id_demande,
+                role: demande.role,
+                dateApprobation: demande.date_approbation || new Date().toISOString(),
+                nouveauRole: demande.role
+            }
+        );
+
+        const [user] = await pool.execute(
+            'SELECT expo_push_token FROM Utilisateur WHERE id_utilisateur = ?',
+            [userId]
+        );
+
+        if (user[0]?.expo_push_token) {
+            await sendPushNotification(
+                user[0].expo_push_token,
+                '✅ Félicitations !',
+                `Votre demande pour devenir ${roleLabel} a été approuvée.`,
+                {
+                    type: 'demand_approved',
+                    demandeId: demande.id_demande,
+                    role: demande.role,
+                    screen: 'profile'
+                },
+                userId,
+                'demand_approved'
+            );
+        }
+
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur notification approbation:', error);
+        return false;
+    }
+};
+
+/**
+ * Notification de rejet
+ */
+const notifyDemandRejected = async (demande, userId, raison) => {
+    try {
+        const roleLabels = {
+            'agent': 'agent immobilier',
+            'owner': 'propriétaire',
+            'manager': 'gérant d\'établissement'
+        };
+        // ✅ CORRECTION : utiliser role_demande
+        const roleValue = demande.role_demande || demande.role || 'agent';
+        const roleLabel = roleLabels[roleValue] || roleValue;
+
+        await saveNotificationToDatabase(
+            userId,
+            '❌ Demande refusée',
+            `Votre demande d'inscription en tant que ${roleLabel} a été refusée. Raison : ${raison || 'Non spécifiée'}. Vous pouvez modifier votre demande et la soumettre à nouveau.`,
+            'demand_rejected',
+            {
+                demandeId: demande.id_demande,
+                role: demande.role,
+                dateRejet: new Date().toISOString(),
+                raison: raison
+            }
+        );
+
+        const [user] = await pool.execute(
+            'SELECT expo_push_token FROM Utilisateur WHERE id_utilisateur = ?',
+            [userId]
+        );
+
+        if (user[0]?.expo_push_token) {
+            await sendPushNotification(
+                user[0].expo_push_token,
+                '❌ Demande refusée',
+                `Votre demande pour devenir ${roleLabel} a été refusée.`,
+                {
+                    type: 'demand_rejected',
+                    demandeId: demande.id_demande,
+                    role: demande.role,
+                    screen: 'request-details'
+                },
+                userId,
+                'demand_rejected'
+            );
+        }
+
+        return true;
+    } catch (error) {
+        console.error('❌ Erreur notification rejet:', error);
+        return false;
+    }
+};
+
+/**
+ * Rappel pour demandes en attente (CRON)
+ */
+const notifyPendingDemands = async () => {
+    try {
+        const [demandes] = await pool.execute(`
+            SELECT 
+                d.*,
+                u.expo_push_token,
+                u.id_utilisateur
+            FROM AgentDemande d
+            JOIN Utilisateur u ON d.id_utilisateur = u.id_utilisateur
+            WHERE d.statut = 'soumise' 
+            AND d.date_soumission < DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND d.rappel_envoye = FALSE
+        `);
+
+        for (const demande of demandes) {
+        const roleLabels = {
+            'agent': 'agent immobilier',
+            'owner': 'propriétaire',
+            'manager': 'gérant d\'établissement'
+        };
+        // ✅ CORRECTION : utiliser role_demande
+        const roleValue = demande.role_demande || demande.role || 'agent';
+        const roleLabel = roleLabels[roleValue] || roleValue;
+
+            await saveNotificationToDatabase(
+                demande.id_utilisateur,
+                '⏳ Suivi de votre demande',
+                `Votre demande d'inscription en tant que ${roleLabel} est toujours en cours d'examen. Nous vous tiendrons informé dès qu'une décision sera prise.`,
+                'demand_reminder',
+                {
+                    demandeId: demande.id_demande,
+                    role: demande.role,
+                    dateSoumission: demande.date_soumission,
+                    joursAttente: Math.floor((Date.now() - new Date(demande.date_soumission)) / (1000 * 60 * 60 * 24))
+                }
+            );
+
+            await pool.execute(
+                `UPDATE AgentDemande SET rappel_envoye = TRUE WHERE id_demande = ?`,
+                [demande.id_demande]
+            );
+        }
+
+        return { rappels_envoyes: demandes.length };
+    } catch (error) {
+        console.error('❌ Erreur rappel demandes en attente:', error);
+        return { rappels_envoyes: 0 };
+    }
+};
+
+
+
+
+
+/**
+ * Rappel pour demandes en attente (CRON)
+ */
+const notifyPendingAgentDemands = async () => {
+    try {
+        const [demandes] = await pool.execute(`
+            SELECT 
+                d.*,
+                u.expo_push_token,
+                u.id_utilisateur
+            FROM AgentDemande d
+            JOIN Utilisateur u ON d.id_utilisateur = u.id_utilisateur
+            WHERE d.statut = 'soumise' 
+            AND d.date_soumission < DATE_SUB(NOW(), INTERVAL 48 HOUR)
+            AND d.rappel_envoye = FALSE
+        `);
+
+        for (const demande of demandes) {
+            await saveNotificationToDatabase(
+                demande.id_utilisateur,
+                '⏳ Suivi de votre demande',
+                `Votre demande d'inscription agent est toujours en cours d'examen. Nous vous tiendrons informé dès qu'une décision sera prise.`,
+                'agent_demand_reminder',
+                {
+                    demandeId: demande.id_demande,
+                    dateSoumission: demande.date_soumission,
+                    joursAttente: Math.floor((Date.now() - new Date(demande.date_soumission)) / (1000 * 60 * 60 * 24))
+                }
+            );
+
+            // Marquer le rappel comme envoyé
+            await pool.execute(
+                `UPDATE AgentDemande SET rappel_envoye = TRUE WHERE id_demande = ?`,
+                [demande.id_demande]
+            );
+        }
+
+        return { rappels_envoyes: demandes.length };
+    } catch (error) {
+        console.error('❌ Erreur rappel demandes en attente:', error);
+        return { rappels_envoyes: 0 };
+    }
+};
+
 
 
 
@@ -3109,7 +3463,15 @@ export {
   notifyClientAboutModificationAccepted,
   notifyClientAboutModificationRefused,
   userHasNotificationsEnabled,
-  getFollowersWithNotifications
+  getFollowersWithNotifications,
+
+
+
+    notifyDemandSubmitted,
+    notifyDemandReview,
+    notifyDemandApproved,
+    notifyDemandRejected,
+    notifyPendingDemands
 };
 
 export default {
@@ -3144,5 +3506,13 @@ export default {
   notifyClientAboutModificationAccepted,
   notifyClientAboutModificationRefused,
   userHasNotificationsEnabled,
-  getFollowersWithNotifications
+  getFollowersWithNotifications,
+
+
+    notifyDemandSubmitted,
+    notifyDemandReview,
+    notifyDemandApproved,
+    notifyDemandRejected,
+    notifyPendingDemands
+  
 };

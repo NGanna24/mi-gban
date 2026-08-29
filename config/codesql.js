@@ -704,10 +704,10 @@ CREATE TABLE IF NOT EXISTS SuiviAgence (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================
--- NOTIFICATIONS
+-- TABLE NOTIFICATION
 -- =============================================================================
 
--- Table des notifications (déplacée après SuiviAgence)
+-- 2. Recréer la table avec tous les types
 CREATE TABLE IF NOT EXISTS Notification (
     id_notification INT PRIMARY KEY AUTO_INCREMENT,
     id_utilisateur INT NOT NULL,
@@ -715,41 +715,85 @@ CREATE TABLE IF NOT EXISTS Notification (
     message TEXT NOT NULL,
     metadata JSON NULL,
     type ENUM(
-        'reservation', 
-        'paiement', 
-        'message', 
-        'systeme', 
-        'like', 
-        'commentaire', 
-        'partage', 
-        'nouvelle_propriete', 
-        'nouveau_suiveur',
+        -- Réservations
+        'reservation',
         'reservation_request_sent',
         'visitor_request_confirmation',
         'owner_message',
         'visit_reminder',
-        'alert_match',
         'reservation_confirmed',
         'reservation_cancelled',
         'reservation_completed',
         'reservation_refused',
         'reservation_status_change',
         'reservation_status_change_owner',
-        'new_contract', 
+        
+        -- Rappels de visite
+        'visite_24h',
+        'visite_24h_proprietaire',
+        'visite_1h',
+        'visite_1h_proprietaire',
+        
+        -- Paiements
+        'paiement',
+        'payment_reminder',
+        'late_payment_alert',
+        
+        -- Contrats
+        'new_contract',
         'contract_accepted',
         'contract_refused',
+        'contract_signed',
         'contract_validated',
         'contract_refused_by_agent',
-        'contract_cancelled_by_agent'
+        'contract_cancelled_by_agent',
+        'contract_sent',
+        'contract_accepted_by_agent',
+        'contract_signed_by_agent',
+        'contract_validated_by_agent',
+        'contract_refused_by_client',
+        'contract_completed',
+        'contract_reminder',
+        'modification_demand',
+        'modification_accepted',
+        'modification_refused',
+
+
+        'agent_demand_submitted',      
+        'agent_demand_review',          
+        'agent_demand_approved',        
+        'agent_demand_rejected',       
+        'agent_demand_cancelled',       
+        'agent_demand_document_uploaded' ,
+        
+        -- Alertes
+        'alert_match',
+        
+        -- Social
+        'message',
+        'like',
+        'commentaire',
+        'partage',
+        'nouveau_suiveur',
+        'nouvelle_propriete',
+        
+        -- Système
+        'systeme',
+        'test'
+        
     ) DEFAULT 'systeme',
+    
     est_lu BOOLEAN DEFAULT FALSE,
     date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
     id_suivi_agence INT NULL,
     
-    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur),
+    FOREIGN KEY (id_utilisateur) REFERENCES Utilisateur(id_utilisateur) ON DELETE CASCADE,
     FOREIGN KEY (id_suivi_agence) REFERENCES SuiviAgence(id_suivi) ON DELETE SET NULL,
+    
     INDEX idx_notification_utilisateur (id_utilisateur),
-    INDEX idx_notification_type (type)
+    INDEX idx_notification_type (type),
+    INDEX idx_notification_date (date_creation),
+    INDEX idx_notification_lu (est_lu)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =============================================================================

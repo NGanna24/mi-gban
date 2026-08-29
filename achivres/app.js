@@ -31,7 +31,7 @@ import cron from 'node-cron';
 import VisitReminderService from './services/VisitReminderService.js';
 
 
-
+ 
 // ⏰ Vérification des rappels toutes les 5 minutes
 cron.schedule('*/5 * * * *', async () => {
     console.log('🔔 Vérification des rappels de visite...');
@@ -40,7 +40,7 @@ cron.schedule('*/5 * * * *', async () => {
         console.log(`📊 Résultat: 24h=${result.rappels_24h.envoyes}/${result.rappels_24h.trouves}, 1h=${result.rappels_1h.envoyes}/${result.rappels_1h.trouves}`);
     } catch (error) {
         console.error('❌ Erreur rappels:', error);
-    } 
+    }
 });
 
 // Mondesir  ==================== CONFIGURATION ENVIRONNEMENT ====================

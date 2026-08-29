@@ -566,6 +566,6 @@ static async updateStatus(req, res) {
   }
 
 
-} 
+}  
 
 export default ReservationController; 

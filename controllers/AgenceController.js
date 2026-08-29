@@ -3,15 +3,19 @@ import Agence from '../models/Agence.js';
 import User from '../models/Utilisateur.js';
 import NotificationService from '../services/NotificationService.js';
 import { pool } from '../config/db.js';
+// Dans ReservationController.js - quand une réservation est confirmée
+
+
+
 
 export const suiviController = {
   /**
    * Suivre une agence + NOTIFICATION
    */
   async suivreAgence(req, res) {
-    try {
+    try { 
       const { id_agence } = req.body;
-      const id_suiveur = req.user.id;
+      const id_suiveur = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       console.log('📝 Suivre agence - Suiveur:', id_suiveur, 'Agence:', id_agence);
 
@@ -36,7 +40,7 @@ export const suiviController = {
           
           await NotificationService.sendPushNotification(
             agenceToken,
-            "👥 Nouveau suiveur !",
+            "Nouveau suiveur !",
             `${suiveur?.fullname || 'Un utilisateur'} suit maintenant votre agence`,
             {
               type: 'nouveau_suiveur',
@@ -86,7 +90,7 @@ export const suiviController = {
   async arreterSuivreAgence(req, res) {
     try {
       const { id_agence } = req.params;
-      const id_suiveur = req.user.id;
+      const id_suiveur = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       console.log('🗑️ Arrêter suivre agence - Suiveur:', id_suiveur, 'Agence:', id_agence);
 
@@ -119,7 +123,7 @@ export const suiviController = {
   async checkSiJeSuisAgence(req, res) {
     try {
       const { id_agence } = req.params;
-      const id_suiveur = req.user.id;
+      const id_suiveur =req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       console.log('🔍 Check si je suis agence - Suiveur:', id_suiveur, 'Agence:', id_agence);
 
@@ -148,7 +152,7 @@ export const suiviController = {
    */
   async mesAbonnements(req, res) {
     try {
-      const id_suiveur = req.user.id;
+      const id_suiveur = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       console.log('📋 Mes abonnements - Suiveur:', id_suiveur);
 
@@ -218,7 +222,7 @@ export const suiviController = {
     try {
       const { id_agence } = req.params;
       const { notifications_actives } = req.body;
-      const id_suiveur = req.user.id;
+      const id_suiveur = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       console.log('🔔 Toggle notifications - Suiveur:', id_suiveur, 'Agence:', id_agence, 'Statut:', notifications_actives);
 
@@ -257,7 +261,7 @@ export const suiviController = {
    */
   async actualitesSuivis(req, res) {
     try {
-      const id_suiveur = req.user.id;
+      const id_suiveur = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
       const { page = 1, limit = 10 } = req.query;
 
       console.log('📰 Actualités suivis - Suiveur:', id_suiveur, 'Page:', page, 'Limit:', limit);
@@ -1053,7 +1057,7 @@ console.log('✅ *********************Données finales envoyées au frontend:', 
    */
   async getConfirmedReservations(req, res) {
     try {
-          const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
+      const id_agence = req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
       const { page = 1, limit = 20 } = req.query;
 
@@ -1163,7 +1167,7 @@ async updateReservationStatus(req, res) {
   try {
     const { id_reservation } = req.params;
     const { newStatus, message } = req.body;
-    const updatedBy = req.user.id;
+    const updatedBy =req.id_utilisateur || req.user?.id_utilisateur || req.user?.id;
 
     console.log('🔄 Mise à jour statut réservation - Réservation:', id_reservation, 
                 'Nouveau statut:', newStatus, 'Par:', updatedBy);
@@ -1502,7 +1506,7 @@ async getDashboardMetrics(req, res) {
 },
 
   /**
-   * Propriétés les plus performantes
+   * Propriétés les plus performantes 
    */
   async getTopPerformingProperties(req, res) {
     try {

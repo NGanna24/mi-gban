@@ -111,7 +111,7 @@ function getAvailableActions(contrat, userRole, userId) {
         id: 'envoyer_modification', 
         label: 'Renvoyer au client', 
         icon: 'send-outline', 
-        color: '#10B981' 
+        color: '#10B981'  
       });
     }
     
