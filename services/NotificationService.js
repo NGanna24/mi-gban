@@ -46,7 +46,7 @@ const userHasNotificationsEnabled = async (userId) => {
     return preferences?.notifications !== false;
     
   } catch (error) {
-    console.error('❌ Erreur vérification préférences:', error);
+    console.error(' Erreur vérification préférences:', error);
     return true;
   }
 };
@@ -56,7 +56,7 @@ const userHasNotificationsEnabled = async (userId) => {
  */
 const getFollowersWithNotifications = async (agenceId) => {
   try {
-    console.log(`📊 Récupération des followers de l'agence ${agenceId}...`);
+    console.log(`Récupération des followers de l'agence ${agenceId}...`);
     
     const query = `
       SELECT 
@@ -104,7 +104,7 @@ const getFollowersWithNotifications = async (agenceId) => {
     return filteredFollowers;
     
   } catch (error) {
-    console.error('❌ Erreur récupération followers:', error);
+    console.error(' Erreur récupération followers:', error);
     return [];
   }
 };
@@ -120,9 +120,9 @@ const cleanupInvalidToken = async (userId) => {
       'UPDATE Utilisateur SET expo_push_token = NULL WHERE id_utilisateur = ?',
       [userId]
     );
-    console.log(`✅ Token nettoyé pour l'utilisateur ${userId}`);
+    console.log(` Token nettoyé pour l'utilisateur ${userId}`);
   } catch (error) {
-    console.error('❌ Erreur lors du nettoyage du token:', error);
+    console.error(' Erreur lors du nettoyage du token:', error);
   }
 };
 
@@ -142,26 +142,26 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
       
       if (attempt > 1) {
         const delay = Math.pow(2, attempt) * 1000;
-        console.log(`⏳ Attente de ${delay}ms avant nouvelle tentative...`);
+        console.log(`Attente de ${delay}ms avant nouvelle tentative...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
       
       const result = await sendPushNotification(expoPushToken, title, body, data, userId, notificationType);
       
       if (result.success) {
-        console.log(`✅ Notification envoyée avec succès (tentative ${attempt})`);
+        console.log(` Notification envoyée avec succès (tentative ${attempt})`);
         return result;
       }
       
       if (result.code === 'DeviceNotRegistered' || result.code === 'InvalidCredentials') {
-        console.log(`❌ Erreur irrécupérable: ${result.code}`);
+        console.log(` Erreur irrécupérable: ${result.code}`);
         return result;
       }
       
       lastError = result.error;
       
     } catch (error) {
-      console.error(`❌ Erreur tentative ${attempt}:`, error.message);
+      console.error(` Erreur tentative ${attempt}:`, error.message);
       lastError = error.message;
       
       if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
@@ -186,12 +186,12 @@ const sendPushNotificationWithRetry = async (expoPushToken, title, body, data = 
 const sendPushNotification = async (expoPushToken, title, body, data = {}, userId = null, notificationType = 'system') => {
   try {
     if (!expoPushToken) {
-      console.error('❌ Token manquant'); 
+      console.error(' Token manquant'); 
       return { success: false, error: 'Token manquant' };
     }
 
     if (!Expo.isExpoPushToken(expoPushToken)) {
-      console.error(`❌ Token Expo invalide: ${expoPushToken?.substring(0, 30)}...`);
+      console.error(` Token Expo invalide: ${expoPushToken?.substring(0, 30)}...`);
       return { success: false, error: 'Token Expo invalide' };
     }
 
@@ -223,7 +223,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
       console.log('📨 Ticket Expo reçu:', ticket.status);
 
       if (ticket.status === 'ok') {
-        console.log('✅ Notification envoyée avec succès via Expo');
+        console.log(' Notification envoyée avec succès via Expo');
         
         if (userId) {
           try {
@@ -236,7 +236,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
             });
             console.log('💾 Notification sauvegardée en BDD pour utilisateur:', userId);
           } catch (dbError) {
-            console.error('⚠️ Erreur sauvegarde BDD:', dbError);
+            console.error(' Erreur sauvegarde BDD:', dbError);
           }
         }
         
@@ -248,7 +248,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
         };
 
       } else {
-        console.error('❌ Erreur Expo:', ticket.message, ticket.details);
+        console.error(' Erreur Expo:', ticket.message, ticket.details);
         
         if (ticket.details?.error === 'DeviceNotRegistered' || 
             ticket.details?.error === 'InvalidCredentials') {
@@ -300,7 +300,7 @@ const sendPushNotification = async (expoPushToken, title, body, data = {}, userI
     }
 
   } catch (error) {
-    console.error('❌ Erreur générale envoi notification:', error);
+    console.error(' Erreur générale envoi notification:', error);
     
     if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
       return { 
@@ -332,7 +332,7 @@ const sendBulkNotifications = async (notifications) => {
       .filter(notification => {
         const isValid = Expo.isExpoPushToken(notification.expoPushToken);
         if (!isValid) {
-          console.log(`⚠️ Token invalide ignoré: ${notification.expoPushToken?.substring(0, 20)}...`);
+          console.log(` Token invalide ignoré: ${notification.expoPushToken?.substring(0, 20)}...`);
         }
         return isValid;
       })
@@ -347,7 +347,7 @@ const sendBulkNotifications = async (notifications) => {
       }));
 
     if (messages.length === 0) {
-      console.log('⏭️ Aucun message valide à envoyer');
+      console.log('Aucun message valide à envoyer');
       return [];
     }
 
@@ -361,9 +361,9 @@ const sendBulkNotifications = async (notifications) => {
         console.log(`🔄 Envoi lot ${i + 1}/${chunks.length} (${chunks[i].length} notifications)...`);
         const tickets = await expo.sendPushNotificationsAsync(chunks[i]);
         allTickets.push(...tickets);
-        console.log(`✅ Lot ${i + 1} envoyé`);
+        console.log(` Lot ${i + 1} envoyé`);
       } catch (error) {
-        console.error(`❌ Erreur lot ${i + 1}:`, error);
+        console.error(` Erreur lot ${i + 1}:`, error);
       }
     }
 
@@ -371,7 +371,7 @@ const sendBulkNotifications = async (notifications) => {
     return allTickets;
 
   } catch (error) {
-    console.error('❌ Erreur envoi notifications en lot:', error);
+    console.error(' Erreur envoi notifications en lot:', error);
     throw error;
   }
 };
@@ -385,7 +385,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     let validTokens = 0;
     let invalidTokens = 0;
     
-    console.log(`📊 Préparation de ${tokens.length} notifications...`);
+    console.log(`Préparation de ${tokens.length} notifications...`);
 
     for (const token of tokens) {
       if (!token) {
@@ -394,7 +394,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
       }
 
       if (!Expo.isExpoPushToken(token)) {
-        console.log(`⚠️ Token invalide ignoré: ${token.substring(0, 20)}...`);
+        console.log(` Token invalide ignoré: ${token.substring(0, 20)}...`);
         invalidTokens++;
         continue;
       }
@@ -412,10 +412,10 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
       validTokens++;
     }
     
-    console.log(`✅ ${validTokens} tokens valides, ${invalidTokens} tokens invalides`);
+    console.log(` ${validTokens} tokens valides, ${invalidTokens} tokens invalides`);
     
     if (messages.length === 0) {
-      console.log('⚠️ Aucun message valide à envoyer');
+      console.log(' Aucun message valide à envoyer');
       return [];
     }
     
@@ -433,13 +433,13 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
         tickets.push(...ticketChunk);
         totalSent += chunk.length;
         
-        console.log(`✅ Lot ${i + 1} envoyé avec succès`);
+        console.log(` Lot ${i + 1} envoyé avec succès`);
         
         if (i < chunks.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
         }
       } catch (error) {
-        console.error(`❌ Erreur envoi lot ${i + 1}:`, error);
+        console.error(` Erreur envoi lot ${i + 1}:`, error);
       }
     }
     
@@ -447,7 +447,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
     return tickets;
     
   } catch (error) {
-    console.error('❌ Erreur envoi notifications:', error);
+    console.error(' Erreur envoi notifications:', error);
     throw error;
   }
 };
@@ -461,7 +461,7 @@ const sendBulkNotificationsExpo = async (tokens, notification) => {
  */
 const getAllUsers = async () => {
   try {
-    console.log('📊 Récupération de tous les utilisateurs actifs...');
+    console.log('Récupération de tous les utilisateurs actifs...');
     
     const query = `
       SELECT id_utilisateur 
@@ -474,7 +474,7 @@ const getAllUsers = async () => {
     return users;
     
   } catch (error) {
-    console.error('❌ Erreur récupération utilisateurs:', error);
+    console.error(' Erreur récupération utilisateurs:', error);
     return [];
   }
 };
@@ -500,7 +500,7 @@ const getUserProfile = async (id_utilisateur) => {
     
     return users.length > 0 ? users[0] : null;
   } catch (error) {
-    console.error('❌ Erreur récupération profil utilisateur:', error);
+    console.error(' Erreur récupération profil utilisateur:', error);
     return null;
   }
 };
@@ -550,7 +550,7 @@ const getAllUserPushTokens = async () => {
     return tokens;
     
   } catch (error) {
-    console.error('❌ Erreur récupération tokens:', error);
+    console.error(' Erreur récupération tokens:', error);
     return [];
   }
 };
@@ -607,7 +607,7 @@ const getCaracteristiquesPrincipales = async (id_propriete) => {
 
     return caracteristiques;
   } catch (error) {
-    console.error('❌ Erreur récupération caractéristiques:', error);
+    console.error(' Erreur récupération caractéristiques:', error);
     return [];
   }
 };
@@ -676,7 +676,7 @@ const calculateSimilarity = (str1, str2) => {
  */
 const propertyMatchesCriteria = (property, alert) => {
   try {
-    console.log(`🔍 Vérification critères pour propriété ${property.id_propriete}:`, alert);
+    console.log(` Vérification critères pour propriété ${property.id_propriete}:`, alert);
 
     const normalizeText = (text) => {
       if (!text) return '';
@@ -698,22 +698,22 @@ const propertyMatchesCriteria = (property, alert) => {
                         calculateSimilarity(villePropriete, villeRecherche) > 0.7;
       
       if (!villeMatch) {
-        console.log(`❌ Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
+        console.log(` Ville ne correspond pas: ${alert.ville} vs ${property.ville}`);
         return false;
       }
-      console.log(`✅ Ville correspond: ${alert.ville} vs ${property.ville}`);
+      console.log(` Ville correspond: ${alert.ville} vs ${property.ville}`);
     } else {
-      console.log(`⚠️ Aucune ville spécifiée dans les critères`);
+      console.log(` Aucune ville spécifiée dans les critères`);
       return false;
     }
 
     if (alert.type_transaction && alert.type_transaction !== property.type_transaction) {
-      console.log(`❌ Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
+      console.log(` Type transaction ne correspond pas: ${alert.type_transaction} vs ${property.type_transaction}`);
       return false;
     }
 
     if (alert.type_propriete && alert.type_propriete !== property.type_propriete) {
-      console.log(`❌ Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
+      console.log(` Type propriété ne correspond pas: ${alert.type_propriete} vs ${property.type_propriete}`);
       return false;
     }
 
@@ -726,7 +726,7 @@ const propertyMatchesCriteria = (property, alert) => {
                            calculateSimilarity(quartierPropriete, quartierRecherche) > 0.6;
       
       if (!quartierMatch) {
-        console.log(`❌ Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
+        console.log(` Quartier ne correspond pas: ${alert.quartier} vs ${property.quartier}`);
         return false;
       }
     }
@@ -736,7 +736,7 @@ const propertyMatchesCriteria = (property, alert) => {
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete < prixMin) {
-        console.log(`❌ Prix trop bas: ${prixPropriete} < ${prixMin}`);
+        console.log(` Prix trop bas: ${prixPropriete} < ${prixMin}`);
         return false;
       }
     }
@@ -746,16 +746,16 @@ const propertyMatchesCriteria = (property, alert) => {
       const prixPropriete = parseFloat(property.prix);
       
       if (prixPropriete > prixMax) {
-        console.log(`❌ Prix trop élevé: ${prixPropriete} > ${prixMax}`);
+        console.log(` Prix trop élevé: ${prixPropriete} > ${prixMax}`);
         return false;
       }
     }
 
-    console.log(`✅ PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
+    console.log(` PROPRIÉTÉ ${property.id_propriete} CORRESPOND À TOUS LES CRITÈRES!`);
     return true;
 
   } catch (error) {
-    console.error('❌ Erreur vérification critères:', error);
+    console.error(' Erreur vérification critères:', error);
     return false;
   }
 };
@@ -810,7 +810,7 @@ const prepareNewPropertyNotification = (property) => {
     : property.titre;
   
   return {
-    title: "🏠 Nouvelle propriété disponible!",
+    title: " Nouvelle propriété disponible!",
     body: `${titreTronque} - ${prixFormate} à ${property.ville || 'Abidjan'}`,
     data: {
       type: 'NEW_PROPERTY',
@@ -859,9 +859,9 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
     
     messageBody += `\n\n🏃‍♂️ Vite, venez voir !`;
     
-    let title = "🔔 Votre alerte immobilière !";
+    let title = " Votre alerte immobilière !";
     if (nomUtilisateur) {
-      title = `🔔 ${nomUtilisateur}, une propriété vous attend !`;
+      title = ` ${nomUtilisateur}, une propriété vous attend !`;
     }
 
     return {
@@ -879,10 +879,10 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
     };
 
   } catch (error) {
-    console.error('❌ Erreur préparation notification personnalisée:', error);
+    console.error(' Erreur préparation notification personnalisée:', error);
     
     return {
-      title: "🔔 Votre alerte immobilière !",
+      title: " Votre alerte immobilière !",
       body: `Nouvelle propriété correspondant à vos critères à ${property.ville || 'Abidjan'}`,
       data: {
         type: 'ALERT_MATCH',
@@ -902,7 +902,7 @@ const preparePersonalizedAlertNotification = async (property, userAlert, userPro
  */
 const getActiveAlerts = async () => {
   try {
-    console.log('📊 Récupération des alertes actives...');
+    console.log('Récupération des alertes actives...');
     
     const query = `
       SELECT 
@@ -938,7 +938,7 @@ const getActiveAlerts = async () => {
     return alerts;
     
   } catch (error) {
-    console.error('❌ Erreur récupération alertes:', error);
+    console.error(' Erreur récupération alertes:', error);
     return [];
   }
 };
@@ -951,7 +951,7 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
     console.log('💾 Sauvegarde notifications en BDD pour les followers...');
     
     if (!followers || followers.length === 0) {
-      console.log('⚠️ Aucun follower à notifier en BDD');
+      console.log(' Aucun follower à notifier en BDD');
       return { saved: false, count: 0, errors: 0, total: 0 };
     }
 
@@ -969,7 +969,7 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
         
         await Notification.create({
           id_utilisateur: follower.id_utilisateur,
-          titre: "🏠 Nouvelle propriété disponible!",
+          titre: " Nouvelle propriété disponible!",
           message: message,
           type: 'nouvelle_propriete',
           metadata: JSON.stringify({
@@ -987,7 +987,7 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
         savedCount++;
 
       } catch (userError) {
-        console.error(`❌ Erreur utilisateur ${follower.id_utilisateur}:`, userError.message);
+        console.error(` Erreur utilisateur ${follower.id_utilisateur}:`, userError.message);
         errorCount++;
       }
     }
@@ -1002,7 +1002,7 @@ const saveNotificationsToDatabaseForFollowers = async (property, followers) => {
     };
 
   } catch (error) {
-    console.error('❌ Erreur sauvegarde BDD:', error);
+    console.error(' Erreur sauvegarde BDD:', error);
     return {
       saved: false,
       count: 0,
@@ -1022,7 +1022,7 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
 
     const notificationId = await Notification.create({
       id_utilisateur: userId,
-      titre: "🔔 Votre alerte immobilière!",
+      titre: " Votre alerte immobilière!",
       message: messagePersonnalise,
       type: 'nouvelle_propriete',
       metadata: JSON.stringify({
@@ -1038,11 +1038,11 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
       })
     });
 
-    console.log(`✅ Notification alerte ${notificationId} sauvegardée`);
+    console.log(` Notification alerte ${notificationId} sauvegardée`);
     return notificationId;
     
   } catch (error) {
-    console.error('❌ Erreur sauvegarde notification alerte:', error);
+    console.error(' Erreur sauvegarde notification alerte:', error);
     return null;
   }
 };
@@ -1053,7 +1053,7 @@ const saveAlertNotificationToDatabase = async (userId, property, nomAlerte, mess
 const notifySingleUser = async (userToken, notification) => {
   try {
     if (!userToken || !Expo.isExpoPushToken(userToken)) {
-      console.log('⚠️ Token utilisateur invalide');
+      console.log(' Token utilisateur invalide');
       return { success: false, message: 'Token invalide' };
     }
 
@@ -1071,15 +1071,15 @@ const notifySingleUser = async (userToken, notification) => {
     const ticket = tickets[0];
     
     if (ticket.status === 'ok') {
-      console.log(`✅ Notification personnalisée envoyée: ${notification.title || notification.titre}`);
+      console.log(` Notification personnalisée envoyée: ${notification.title || notification.titre}`);
       return { success: true, ticket: ticket };
     } else {
-      console.log(`❌ Échec envoi notification: ${ticket.message}`);
+      console.log(` Échec envoi notification: ${ticket.message}`);
       return { success: false, message: ticket.message };
     }
     
   } catch (error) {
-    console.error('❌ Erreur notification utilisateur:', error);
+    console.error(' Erreur notification utilisateur:', error);
     return { success: false, message: error.message };
   }
 };
@@ -1090,12 +1090,12 @@ const notifySingleUser = async (userToken, notification) => {
  */
 const notifyUsersWithMatchingAlerts = async (property) => {
   try {
-    console.log('🔔 NOTIFICATION ALERTES PERSONNALISÉES');
+    console.log(' NOTIFICATION ALERTES PERSONNALISÉES');
     
     const activeAlerts = await getActiveAlerts();
     
     if (activeAlerts.length === 0) {
-      console.log('ℹ️ Aucune alerte active trouvée');
+      console.log(' Aucune alerte active trouvée');
       return {
         success: true,
         message: 'Aucune alerte active',
@@ -1104,7 +1104,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
       };
     }
 
-    console.log(`🔍 Vérification de ${activeAlerts.length} alertes...`);
+    console.log(` Vérification de ${activeAlerts.length} alertes...`);
 
     let matchesFound = 0;
     let notificationsSent = 0;
@@ -1114,7 +1114,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
       try {
         // Exclure le propriétaire de la propriété
         if (alert.id_utilisateur === property.id_utilisateur) {
-          console.log(`⏭️ Alerte ${alert.id_alerte} ignorée (propriétaire de la propriété)`);
+          console.log(`Alerte ${alert.id_alerte} ignorée (propriétaire de la propriété)`);
           continue;
         }
         
@@ -1135,26 +1135,26 @@ const notifyUsersWithMatchingAlerts = async (property) => {
         }
         
         if (!notificationsEnabled) {
-          console.log(`⏭️ Alerte ${alert.id_alerte} ignorée (notifications désactivées)`);
+          console.log(`Alerte ${alert.id_alerte} ignorée (notifications désactivées)`);
           continue;
         }
         
-        console.log(`🔍 Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
+        console.log(` Vérification alerte ${alert.id_alerte} pour ${alert.fullname}...`);
         
         const matches = propertyMatchesCriteria(property, alert);
         
         if (matches) {
-          console.log(`✅ ALERTE ${alert.id_alerte} CORRESPOND!`);
+          console.log(` ALERTE ${alert.id_alerte} CORRESPOND!`);
           matchesFound++;
           usersToNotify.push(alert);
         }
         
       } catch (alertError) {
-        console.error(`❌ Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
+        console.error(` Erreur vérification alerte ${alert?.id_alerte || 'inconnue'}:`, alertError.message);
       }
     }
 
-    console.log(`📊 RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
+    console.log(`RÉSULTAT: ${matchesFound}/${activeAlerts.length} alertes correspondent`);
 
     if (usersToNotify.length > 0) {
       console.log(`📨 Préparation notifications pour ${usersToNotify.length} utilisateurs...`);
@@ -1170,7 +1170,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
           
           if (result.success) {
             notificationsSent++;
-            console.log(`✅ Notification envoyée à ${userAlert.fullname}`);
+            console.log(` Notification envoyée à ${userAlert.fullname}`);
             
             await saveAlertNotificationToDatabase(
               userAlert.id_utilisateur, 
@@ -1180,15 +1180,15 @@ const notifyUsersWithMatchingAlerts = async (property) => {
             );
             
           } else {
-            console.log(`⚠️ Échec notification pour ${userAlert.fullname}:`, result.message);
+            console.log(` Échec notification pour ${userAlert.fullname}:`, result.message);
           }
           
         } catch (userError) {
-          console.error(`❌ Erreur notification utilisateur:`, userError.message);
+          console.error(` Erreur notification utilisateur:`, userError.message);
         }
       }
     } else {
-      console.log('ℹ️ Aucun utilisateur à notifier');
+      console.log(' Aucun utilisateur à notifier');
     }
 
     return {
@@ -1199,7 +1199,7 @@ const notifyUsersWithMatchingAlerts = async (property) => {
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification alertes:', error);
+    console.error(' ERREUR notification alertes:', error);
     
     return {
       success: false,
@@ -1234,7 +1234,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
     const validTokens = followers
       .filter(f => {
         if (f.id_utilisateur === property.id_utilisateur) {
-          console.log(`⏭️ Exclu: propriétaire ${f.fullname}`);
+          console.log(`Exclu: propriétaire ${f.fullname}`);
           return false;
         }
         return f.expo_push_token && Expo.isExpoPushToken(f.expo_push_token);
@@ -1269,11 +1269,11 @@ const notifyAllUsersAboutNewProperty = async (property) => {
       total_notifications: pushTickets.length + alertResult.users_notified
     };
 
-    console.log('✅ NOTIFICATION COMPLÈTE TERMINÉE:', result);
+    console.log(' NOTIFICATION COMPLÈTE TERMINÉE:', result);
     return result;
 
   } catch (error) {
-    console.error('❌ ERREUR NOTIFICATION:', error);
+    console.error(' ERREUR NOTIFICATION:', error);
     
     return {
       success: false,
@@ -1296,7 +1296,7 @@ const notifyAllUsersAboutNewProperty = async (property) => {
 
 const getReservationDetails = async (id_reservation) => {
   try {
-    console.log('📊 Récupération détails réservation ID:', id_reservation);
+    console.log('Récupération détails réservation ID:', id_reservation);
     
     const query = `
       SELECT 
@@ -1327,14 +1327,14 @@ const getReservationDetails = async (id_reservation) => {
     const [reservations] = await pool.execute(query, [id_reservation]);
 
     if (reservations.length === 0) {
-      console.log('⚠️ Aucune réservation trouvée');
+      console.log(' Aucune réservation trouvée');
       return null;
     } 
 
     const reservation = reservations[0];
     
     // LOG DE DEBUG
-    console.log('🔍 Données récupérées:', {
+    console.log(' Données récupérées:', {
       id_reservation: reservation.id_reservation,
       visiteur_nom: reservation.visiteur_nom,
       visiteur_token: reservation.visiteur_token ? 'PRÉSENT' : 'ABSENT',
@@ -1345,18 +1345,18 @@ const getReservationDetails = async (id_reservation) => {
       heure_visite: reservation.heure_visite
     });
     
-    // ✅ FALLBACK - Si les noms sont vides
+    //  FALLBACK - Si les noms sont vides
     if (!reservation.visiteur_nom || reservation.visiteur_nom === '') {
-      console.warn('⚠️ visiteur_nom est vide, utilisation de "Visiteur"');
+      console.warn(' visiteur_nom est vide, utilisation de "Visiteur"');
       reservation.visiteur_nom = 'Visiteur';
     }
     
     if (!reservation.proprietaire_nom || reservation.proprietaire_nom === '') {
-      console.warn('⚠️ proprietaire_nom est vide, utilisation de "Propriétaire"');
+      console.warn(' proprietaire_nom est vide, utilisation de "Propriétaire"');
       reservation.proprietaire_nom = 'Propriétaire';
     }
 
-    // ✅ S'assurer que les tokens sont des strings valides
+    //  S'assurer que les tokens sont des strings valides
     const visiteur_token = reservation.visiteur_token || null;
     const proprietaire_token = reservation.proprietaire_token || null;
 
@@ -1374,7 +1374,7 @@ const getReservationDetails = async (id_reservation) => {
     };
 
   } catch (error) {
-    console.error('❌ Erreur récupération détails réservation:', error);
+    console.error(' Erreur récupération détails réservation:', error);
     return null;
   }
 };
@@ -1384,10 +1384,10 @@ const getReservationDetails = async (id_reservation) => {
  */
 const notifyOwnerNewReservation = async (reservation) => {
   try {
-    console.log('🔔 Notification nouvelle réservation au propriétaire');
+    console.log(' Notification nouvelle réservation au propriétaire');
     
     if (reservation.id_utilisateur === reservation.id_proprietaire) {
-      console.log('⚠️ Visiteur est propriétaire, notification annulée');
+      console.log(' Visiteur est propriétaire, notification annulée');
       return { 
         success: true, 
         skipped: true, 
@@ -1397,7 +1397,7 @@ const notifyOwnerNewReservation = async (reservation) => {
 
     const reservationDetails = await getReservationDetails(reservation.id_reservation);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
@@ -1405,12 +1405,12 @@ const notifyOwnerNewReservation = async (reservation) => {
     const visiteur_nom = reservationDetails.visiteur_nom || 'Un visiteur';
 
     if (!proprietaire_token || !Expo.isExpoPushToken(proprietaire_token)) {
-      console.log(`⚠️ Token propriétaire invalide pour ${proprietaire_nom}`);
+      console.log(` Token propriétaire invalide pour ${proprietaire_nom}`);
       return { success: false, error: 'Token propriétaire invalide' };
     }
 
     const formattedDate = formatDateForDisplay(date_visite);
-    const title = "🔔 Nouvelle demande de visite";
+    const title = " Nouvelle demande de visite";
     const body = `${visiteur_nom} souhaite visiter "${propriete_titre}" le ${formattedDate} à ${heure_visite}`;
     
     const data = {
@@ -1433,11 +1433,11 @@ const notifyOwnerNewReservation = async (reservation) => {
       'reservation'
     );
 
-    console.log(`✅ Notification envoyée au propriétaire ${proprietaire_nom}`);
+    console.log(` Notification envoyée au propriétaire ${proprietaire_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification propriétaire:', error);
+    console.error(' Erreur notification propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1453,14 +1453,14 @@ const notifyVisitorReservationRequest = async (reservation) => {
     const reservationDetails = await getReservationDetails(reservationId);
     
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
  
@@ -1489,17 +1489,17 @@ const notifyVisitorReservationRequest = async (reservation) => {
     );
 
     if (result.success) {
-      console.log(`✅ Notification envoyée au visiteur ${visiteur_nom}`);
+      console.log(` Notification envoyée au visiteur ${visiteur_nom}`);
     } else if (result.retryable) {
-      console.log(`⚠️ Erreur réseau pour ${visiteur_nom}, tentative en arrière-plan...`);
+      console.log(` Erreur réseau pour ${visiteur_nom}, tentative en arrière-plan...`);
     } else {
-      console.log(`❌ Échec notification pour ${visiteur_nom}:`, result.error);
+      console.log(` Échec notification pour ${visiteur_nom}:`, result.error);
     }
     
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification visiteur:', error);
+    console.error(' Erreur notification visiteur:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1514,7 +1514,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     let reservationDetails;
     let reservationId;
 
-    // ✅ Gérer les différents formats de réservation
+    //  Gérer les différents formats de réservation
     if (typeof reservation === 'number' || typeof reservation === 'string') {
       reservationId = parseInt(reservation);
       reservationDetails = await getReservationDetails(reservationId);
@@ -1525,16 +1525,16 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       reservationId = reservation.id;
       reservationDetails = await getReservationDetails(reservationId);
     } else {
-      console.error('❌ Format de réservation invalide:', reservation);
+      console.error(' Format de réservation invalide:', reservation);
       return { success: false, error: 'Format de réservation invalide' };
     }
 
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés pour ID:', reservationId);
+      console.log(' Détails réservation non trouvés pour ID:', reservationId);
       return { success: false, error: 'Réservation non trouvée' };
     }
 
-    // ✅ Extraire les données avec des fallbacks
+    //  Extraire les données avec des fallbacks
     const { 
       proprietaire_token, 
       proprietaire_nom, 
@@ -1557,52 +1557,52 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
       heure_visite: heure_visite || 'Non définie'
     });
 
-    // ✅ Définir les messages de statut
+    //  Définir les messages de statut
     const statusMessages = {
       'confirme': {
         owner: {
-          title: "✅ Visite confirmée",
+          title: "Visite confirmée",
           body: `La visite de ${visiteur_nom || 'Visiteur'} pour "${propriete_titre || 'la propriété'}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         },
         visitor: {
-          title: "✅ Visite confirmée !",
+          title: "Visite confirmée !",
           body: `Votre visite pour "${propriete_titre || 'la propriété'}" est confirmée pour le ${formatDateForDisplay(date_visite)} à ${heure_visite}.`,
           type: 'reservation_confirmed'
         }
       },
       'annule': {
         owner: {
-          title: "🚫 Visite annulée",
+          title: " Visite annulée",
           body: `La visite pour "${propriete_titre || 'la propriété'}" le ${formatDateForDisplay(date_visite)} a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         },
         visitor: {
-          title: "🚫 Visite annulée",
+          title: "Visite annulée",
           body: `Votre visite pour "${propriete_titre || 'la propriété'}" a été annulée. ${message || ''}`,
           type: 'reservation_cancelled'
         }
       },
       'termine': {
         owner: {
-          title: "✅ Visite terminée",
+          title: "Visite terminée",
           body: `La visite pour "${propriete_titre || 'la propriété'}" s'est terminée le ${formatDateForDisplay(date_visite)}.`,
           type: 'reservation_completed'
         },
         visitor: {
-          title: "✅ Visite terminée",
+          title: "Visite terminée",
           body: `Merci d'avoir visité "${propriete_titre || 'la propriété'}" ! N'hésitez pas à laisser un avis.`,
           type: 'reservation_completed'
         }
       },
       'refuse': {
         owner: {
-          title: "❌ Visite refusée",
+          title: " Visite refusée",
           body: `Vous avez refusé la visite pour "${propriete_titre || 'la propriété'}" le ${formatDateForDisplay(date_visite)}. ${message || ''}`,
           type: 'reservation_refused'
         },
         visitor: {
-          title: "❌ Visite refusée",
+          title: "Visite refusée",
           body: `Votre demande de visite pour "${propriete_titre || 'la propriété'}" a été refusée. ${message || 'Le propriétaire a refusé votre demande.'}`,
           type: 'reservation_refused'
         }
@@ -1611,14 +1611,14 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
     const messages = statusMessages[newStatus];
     if (!messages) {
-      console.log(`⚠️ Statut non géré: ${newStatus}`);
+      console.log(` Statut non géré: ${newStatus}`);
       return { success: false, error: 'Statut non géré' };
     }
 
     const results = [];
     const sentNotifications = [];
 
-    // ✅ Notification au PROPRIÉTAIRE
+    //  Notification au PROPRIÉTAIRE
     if (proprietaire_token && Expo.isExpoPushToken(proprietaire_token)) {
       console.log(`👤 Notification au propriétaire ${proprietaire_nom || 'Propriétaire'}...`);
       
@@ -1651,10 +1651,10 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
       if (ownerResult.success) sentNotifications.push('owner');
     } else {
-      console.log(`⚠️ Token propriétaire invalide ou absent pour ${proprietaire_nom || 'Propriétaire'}`);
+      console.log(` Token propriétaire invalide ou absent pour ${proprietaire_nom || 'Propriétaire'}`);
     }
 
-    // ✅ Notification au VISITEUR
+    //  Notification au VISITEUR
     if (visiteur_token && Expo.isExpoPushToken(visiteur_token)) {
       console.log(`👤 Notification au visiteur ${visiteur_nom || 'Visiteur'}...`);
       
@@ -1687,10 +1687,10 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
 
       if (visitorResult.success) sentNotifications.push('visitor');
     } else {
-      console.log(`⚠️ Token visiteur invalide ou absent pour ${visiteur_nom || 'Visiteur'}`);
+      console.log(` Token visiteur invalide ou absent pour ${visiteur_nom || 'Visiteur'}`);
     }
 
-    console.log(`📊 ${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
+    console.log(`${results.filter(r => r.success).length}/${results.length} notifications envoyées`);
     console.log('=== FIN NOTIFICATION ===');
 
     return {
@@ -1703,7 +1703,7 @@ const notifyReservationStatusChange = async (reservation, oldStatus, newStatus, 
     };
 
   } catch (error) {
-    console.error('❌ ERREUR notification changement statut:', error);
+    console.error(' ERREUR notification changement statut:', error);
     
     return {
       success: false,
@@ -1721,18 +1721,18 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, proprietaire_nom, propriete_titre } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const title = "💬 Message du propriétaire";
+    const title = " Message du propriétaire";
     const truncatedMessage = message.length > 50 ? message.substring(0, 47) + '...' : message;
     const body = `${proprietaire_nom} vous a envoyé un message concernant "${propriete_titre}": "${truncatedMessage}"`;
     
@@ -1755,11 +1755,11 @@ const notifyVisitorOwnerMessage = async (reservationId, message) => {
       'owner_message'
     );
 
-    console.log(`✅ Message propriétaire envoyé à ${visiteur_nom}`);
+    console.log(` Message propriétaire envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification message propriétaire:', error);
+    console.error(' Erreur notification message propriétaire:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1773,18 +1773,18 @@ const notifyVisitReminder = async (reservationId) => {
     
     const reservationDetails = await getReservationDetails(reservationId);
     if (!reservationDetails) {
-      console.log('⚠️ Détails réservation non trouvés');
+      console.log(' Détails réservation non trouvés');
       return { success: false, error: 'Réservation non trouvée' };
     }
 
     const { visiteur_token, visiteur_nom, propriete_titre, heure_visite } = reservationDetails;
 
     if (!visiteur_token || !Expo.isExpoPushToken(visiteur_token)) {
-      console.log(`⚠️ Token visiteur invalide pour ${visiteur_nom}`);
+      console.log(` Token visiteur invalide pour ${visiteur_nom}`);
       return { success: false, error: 'Token visiteur invalide' };
     }
 
-    const title = "⏰ Rappel de visite demain";
+    const title = " Rappel de visite demain";
     const body = `N'oubliez pas votre visite de "${propriete_titre}" demain à ${heure_visite}`;
     
     const data = {
@@ -1806,11 +1806,11 @@ const notifyVisitReminder = async (reservationId) => {
       'visit_reminder'
     );
 
-    console.log(`✅ Rappel visite envoyé à ${visiteur_nom}`);
+    console.log(` Rappel visite envoyé à ${visiteur_nom}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification rappel visite:', error);
+    console.error(' Erreur notification rappel visite:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1828,20 +1828,20 @@ const notifyClientAboutNewContract = async (contrat, message = null) => {
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     // Vérifier les préférences
     const notificationsEnabled = await userHasNotificationsEnabled(contrat.id_utilisateur);
     if (!notificationsEnabled) {
-      console.log('⏭️ Client a désactivé les notifications');
+      console.log('Client a désactivé les notifications');
       return { success: true, skipped: true, reason: 'notifications_disabled' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "📄 Nouveau contrat disponible";
+    const title = "Nouveau contrat disponible";
     const body = message || `Un nouveau contrat pour "${propriete?.titre || 'la propriété'}" est prêt à être signé.`;
     
     const data = {
@@ -1864,11 +1864,11 @@ const notifyClientAboutNewContract = async (contrat, message = null) => {
       'new_contract'
     );
 
-    console.log(`✅ Notification contrat envoyée au client ${client.fullname}`);
+    console.log(` Notification contrat envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client nouveau contrat:', error);
+    console.error(' Erreur notification client nouveau contrat:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1878,18 +1878,18 @@ const notifyClientAboutNewContract = async (contrat, message = null) => {
  */
 const notifyAgentAboutContractAcceptance = async (contrat, message = null) => {
   try {
-    console.log('✅ Notification acceptation contrat à l\'agent:', contrat.id_contrat);
+    console.log(' Notification acceptation contrat à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✅ Contrat accepté par le client";
+    const title = "Contrat accepté par le client";
     const body = message || `${client?.fullname || 'Le client'} a accepté le contrat pour "${propriete?.titre || 'la propriété'}".`;
     
     const data = {
@@ -1913,11 +1913,11 @@ const notifyAgentAboutContractAcceptance = async (contrat, message = null) => {
       'contract_accepted'
     );
 
-    console.log(`✅ Notification acceptation envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification acceptation envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent acceptation:', error);
+    console.error(' Erreur notification agent acceptation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1927,18 +1927,18 @@ const notifyAgentAboutContractAcceptance = async (contrat, message = null) => {
  */
 const notifyAgentAboutContractRefusal = async (contrat, message = null) => {
   try {
-    console.log('❌ Notification refus contrat à l\'agent:', contrat.id_contrat);
+    console.log(' Notification refus contrat à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "❌ Contrat refusé par le client";
+    const title = "Contrat refusé par le client";
     const body = message || `${client?.fullname || 'Le client'} a refusé le contrat pour "${propriete?.titre || 'la propriété'}".`;
     
     const data = {
@@ -1962,11 +1962,11 @@ const notifyAgentAboutContractRefusal = async (contrat, message = null) => {
       'contract_refused'
     );
 
-    console.log(`✅ Notification refus envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification refus envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent refus:', error);
+    console.error(' Erreur notification agent refus:', error);
     return { success: false, error: error.message };
   }
 };
@@ -1976,18 +1976,18 @@ const notifyAgentAboutContractRefusal = async (contrat, message = null) => {
  */
 const notifyAgentAboutContractSigned = async (contrat) => {
   try {
-    console.log('✍️ Notification signature contrat à l\'agent:', contrat.id_contrat);
+    console.log('Notification signature contrat à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✍️ Contrat signé par le client";
+    const title = "Contrat signé par le client";
     const body = `${client?.fullname || 'Le client'} a signé le contrat pour "${propriete?.titre || 'la propriété'}". Vous pouvez maintenant le valider.`;
     
     const data = {
@@ -2011,11 +2011,11 @@ const notifyAgentAboutContractSigned = async (contrat) => {
       'contract_signed'
     );
 
-    console.log(`✅ Notification signature envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification signature envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent signature:', error);
+    console.error(' Erreur notification agent signature:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2025,17 +2025,17 @@ const notifyAgentAboutContractSigned = async (contrat) => {
  */
 const notifyClientAboutContractValidation = async (contrat, message = null) => {
   try {
-    console.log('✅ Notification validation contrat au client:', contrat.id_contrat);
+    console.log(' Notification validation contrat au client:', contrat.id_contrat);
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✅ Contrat validé !";
+    const title = "Contrat validé !";
     const body = message || `Votre contrat pour "${propriete?.titre || 'la propriété'}" a été validé par l'agent. Le contrat est maintenant actif.`;
     
     const data = {
@@ -2058,11 +2058,11 @@ const notifyClientAboutContractValidation = async (contrat, message = null) => {
       'contract_validated'
     );
 
-    console.log(`✅ Notification validation envoyée au client ${client.fullname}`);
+    console.log(` Notification validation envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client validation:', error);
+    console.error(' Erreur notification client validation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2072,17 +2072,17 @@ const notifyClientAboutContractValidation = async (contrat, message = null) => {
  */
 const notifyClientAboutContractRefusal = async (contrat, message = null) => {
   try {
-    console.log('❌ Notification refus contrat au client:', contrat.id_contrat);
+    console.log(' Notification refus contrat au client:', contrat.id_contrat);
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "❌ Contrat refusé";
+    const title = " Contrat refusé";
     const body = message || `Votre contrat pour "${propriete?.titre || 'la propriété'}" a été refusé.`;
     
     const data = {
@@ -2105,11 +2105,11 @@ const notifyClientAboutContractRefusal = async (contrat, message = null) => {
       'contract_refused_by_agent'
     );
 
-    console.log(`✅ Notification refus envoyée au client ${client.fullname}`);
+    console.log(` Notification refus envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client refus:', error);
+    console.error(' Erreur notification client refus:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2123,13 +2123,13 @@ const notifyClientAboutContractCancellation = async (contrat, message = null) =>
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "🚫 Contrat annulé";
+    const title = " Contrat annulé";
     const body = message || `Le contrat pour "${propriete?.titre || 'la propriété'}" a été annulé.`;
     
     const data = {
@@ -2152,11 +2152,11 @@ const notifyClientAboutContractCancellation = async (contrat, message = null) =>
       'contract_cancelled_by_agent'
     );
 
-    console.log(`✅ Notification annulation envoyée au client ${client.fullname}`);
+    console.log(` Notification annulation envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client annulation:', error);
+    console.error(' Erreur notification client annulation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2170,14 +2170,14 @@ const notifyAgentAboutContractSent = async (contrat) => {
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "📤 Contrat envoyé au client";
+    const title = " Contrat envoyé au client";
     const body = `Le contrat pour "${propriete?.titre || 'la propriété'}" a été envoyé à ${client?.fullname || 'le client'}.`;
     
     const data = {
@@ -2202,11 +2202,11 @@ const notifyAgentAboutContractSent = async (contrat) => {
       3
     );
 
-    console.log(`✅ Notification envoi envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification envoi envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent envoi:', error);
+    console.error(' Erreur notification agent envoi:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2216,18 +2216,18 @@ const notifyAgentAboutContractSent = async (contrat) => {
  */
 const notifyClientAboutContractAcceptedByAgent = async (contrat, message = null) => {
   try {
-    console.log('✅ Notification acceptation contrat au client:', contrat.id_contrat);
+    console.log(' Notification acceptation contrat au client:', contrat.id_contrat);
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const agent = await getUserProfile(contrat.id_agent);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✅ Contrat accepté par l'agent";
+    const title = " Contrat accepté par l'agent";
     const body = message || `${agent?.fullname || 'L\'agent'} a accepté le contrat pour "${propriete?.titre || 'la propriété'}". Le contrat est maintenant actif.`;
     
     const data = {
@@ -2252,11 +2252,11 @@ const notifyClientAboutContractAcceptedByAgent = async (contrat, message = null)
       3
     );
 
-    console.log(`✅ Notification acceptation envoyée au client ${client.fullname}`);
+    console.log(` Notification acceptation envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client acceptation:', error);
+    console.error(' Erreur notification client acceptation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2270,14 +2270,14 @@ const notifyClientAboutContractSignedByAgent = async (contrat) => {
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const agent = await getUserProfile(contrat.id_agent);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✍️ Contrat signé par l'agent";
+    const title = "Contrat signé par l'agent";
     const body = `${agent?.fullname || 'L\'agent'} a signé le contrat pour "${propriete?.titre || 'la propriété'}". Le contrat est maintenant officiel.`;
     
     const data = {
@@ -2302,11 +2302,11 @@ const notifyClientAboutContractSignedByAgent = async (contrat) => {
       3
     );
 
-    console.log(`✅ Notification signature envoyée au client ${client.fullname}`);
+    console.log(` Notification signature envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client signature agent:', error);
+    console.error(' Erreur notification client signature agent:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2316,18 +2316,18 @@ const notifyClientAboutContractSignedByAgent = async (contrat) => {
  */
 const notifyAgentAboutContractValidation = async (contrat) => {
   try {
-    console.log('✅ Notification validation contrat à l\'agent:', contrat.id_contrat);
+    console.log(' Notification validation contrat à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✅ Contrat validé";
+    const title = " Contrat validé";
     const body = `Le contrat pour "${propriete?.titre || 'la propriété'}" a été validé avec ${client?.fullname || 'le client'}.`;
     
     const data = {
@@ -2352,11 +2352,11 @@ const notifyAgentAboutContractValidation = async (contrat) => {
       3
     );
 
-    console.log(`✅ Notification validation envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification validation envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent validation:', error);
+    console.error(' Erreur notification agent validation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2366,18 +2366,18 @@ const notifyAgentAboutContractValidation = async (contrat) => {
  */
 const notifyAgentAboutContractRefusedByClient = async (contrat, message = null) => {
   try {
-    console.log('❌ Notification refus client à l\'agent:', contrat.id_contrat);
+    console.log(' Notification refus client à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "❌ Contrat refusé par le client";
+    const title = " Contrat refusé par le client";
     const body = message || `${client?.fullname || 'Le client'} a refusé le contrat pour "${propriete?.titre || 'la propriété'}".`;
     
     const data = {
@@ -2402,11 +2402,11 @@ const notifyAgentAboutContractRefusedByClient = async (contrat, message = null) 
       3
     );
 
-    console.log(`✅ Notification refus client envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification refus client envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent refus client:', error);
+    console.error(' Erreur notification agent refus client:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2416,18 +2416,18 @@ const notifyAgentAboutContractRefusedByClient = async (contrat, message = null) 
  */
 const notifyAgentAboutContractCompleted = async (contrat) => {
   try {
-    console.log('🏁 Notification fin contrat à l\'agent:', contrat.id_contrat);
+    console.log(' Notification fin contrat à l\'agent:', contrat.id_contrat);
     
     const agent = await getUserProfile(contrat.id_agent);
     if (!agent || !agent.expo_push_token) {
-      console.log('⚠️ Agent non trouvé ou sans token push');
+      console.log(' Agent non trouvé ou sans token push');
       return { success: false, error: 'Agent sans token' };
     }
 
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "🏁 Contrat terminé";
+    const title = " Contrat terminé";
     const body = `Le contrat pour "${propriete?.titre || 'la propriété'}" avec ${client?.fullname || 'le client'} est maintenant terminé.`;
     
     const data = {
@@ -2452,11 +2452,11 @@ const notifyAgentAboutContractCompleted = async (contrat) => {
       3
     );
 
-    console.log(`✅ Notification fin contrat envoyée à l'agent ${agent.fullname}`);
+    console.log(` Notification fin contrat envoyée à l'agent ${agent.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification agent fin contrat:', error);
+    console.error(' Erreur notification agent fin contrat:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2466,17 +2466,17 @@ const notifyAgentAboutContractCompleted = async (contrat) => {
  */
 const notifyClientAboutContractCompleted = async (contrat) => {
   try {
-    console.log('🏁 Notification fin contrat au client:', contrat.id_contrat);
+    console.log(' Notification fin contrat au client:', contrat.id_contrat);
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "🏁 Contrat terminé";
+    const title = " Contrat terminé";
     const body = `Le contrat pour "${propriete?.titre || 'la propriété'}" est maintenant terminé. Merci pour votre confiance !`;
     
     const data = {
@@ -2500,11 +2500,11 @@ const notifyClientAboutContractCompleted = async (contrat) => {
       3
     );
 
-    console.log(`✅ Notification fin contrat envoyée au client ${client.fullname}`);
+    console.log(` Notification fin contrat envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client fin contrat:', error);
+    console.error(' Erreur notification client fin contrat:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2514,17 +2514,17 @@ const notifyClientAboutContractCompleted = async (contrat) => {
  */
 const notifyClientAboutContractReminder = async (contrat, message = null) => {
   try {
-    console.log('🔔 Notification relance contrat au client:', contrat.id_contrat);
+    console.log(' Notification relance contrat au client:', contrat.id_contrat);
     
     const client = await getUserProfile(contrat.id_utilisateur);
     if (!client || !client.expo_push_token) {
-      console.log('⚠️ Client non trouvé ou sans token push');
+      console.log(' Client non trouvé ou sans token push');
       return { success: false, error: 'Client sans token' };
     }
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "🔔 Rappel : Contrat en attente";
+    const title = " Rappel : Contrat en attente";
     const body = message || `Vous avez un contrat en attente pour "${propriete?.titre || 'la propriété'}". N'oubliez pas de le signer !`;
     
     const data = {
@@ -2548,11 +2548,11 @@ const notifyClientAboutContractReminder = async (contrat, message = null) => {
       3
     );
 
-    console.log(`✅ Notification relance envoyée au client ${client.fullname}`);
+    console.log(` Notification relance envoyée au client ${client.fullname}`);
     return result;
 
   } catch (error) {
-    console.error('❌ Erreur notification client relance:', error);
+    console.error(' Erreur notification client relance:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2570,7 +2570,7 @@ const notifyAgentAboutModificationDemand = async (contrat, raison) => {
     const client = await getUserProfile(contrat.id_utilisateur);
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "📝 Demande de modification";
+    const title = " Demande de modification";
     const body = `${client?.fullname || 'Le client'} a demandé des modifications pour "${propriete?.titre || 'la propriété'}". Raison: ${raison}`;
     
     const data = {
@@ -2595,7 +2595,7 @@ const notifyAgentAboutModificationDemand = async (contrat, raison) => {
       3
     );
   } catch (error) {
-    console.error('❌ Erreur notification agent modification:', error);
+    console.error(' Erreur notification agent modification:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2612,7 +2612,7 @@ const notifyClientAboutModificationAccepted = async (contrat) => {
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "✅ Demande de modification acceptée";
+    const title = " Demande de modification acceptée";
     const body = `L'agent a accepté votre demande de modification pour "${propriete?.titre || 'la propriété'}". Le contrat va être modifié.`;
     
     const data = {
@@ -2635,7 +2635,7 @@ const notifyClientAboutModificationAccepted = async (contrat) => {
       3
     );
   } catch (error) {
-    console.error('❌ Erreur notification client acceptation:', error);
+    console.error(' Erreur notification client acceptation:', error);
     return { success: false, error: error.message };
   }
 };
@@ -2652,7 +2652,7 @@ const notifyClientAboutModificationRefused = async (contrat, message = null) => 
 
     const propriete = await Propriete.findById(contrat.id_propriete);
     
-    const title = "❌ Demande de modification refusée";
+    const title = " Demande de modification refusée";
     const body = message || `L'agent a refusé votre demande de modification pour "${propriete?.titre || 'la propriété'}".`;
     
     const data = {
@@ -2675,7 +2675,7 @@ const notifyClientAboutModificationRefused = async (contrat, message = null) => 
       3
     );
   } catch (error) {
-    console.error('❌ Erreur notification client refus:', error);
+    console.error(' Erreur notification client refus:', error);
     return { success: false, error: error.message };
   }
 
@@ -2689,9 +2689,6 @@ const notifyClientAboutModificationRefused = async (contrat, message = null) => 
 // NOTIFICATIONS - DEMANDES D'INSCRIPTION (TOUS RÔLES)
 // ============================================================================
 
-/**
- * Notification de soumission de demande d'inscription (tous rôles)
- */
 const notifyDemandSubmitted = async (demande, userId) => {
     try {
         const roleLabels = {
@@ -2699,14 +2696,13 @@ const notifyDemandSubmitted = async (demande, userId) => {
             'owner': 'propriétaire',
             'manager': 'gérant d\'établissement'
         };
-        // ✅ CORRECTION : utiliser role_demande
         const roleValue = demande.role_demande || demande.role || 'agent';
         const roleLabel = roleLabels[roleValue] || roleValue;
 
-        // ✅ 1. Notification au demandeur
+        //  1. NOTIFICATION À L'UTILISATEUR (celui qui a soumis)
         await saveNotificationToDatabase(
             userId,
-            'Demande soumise avec succès',
+            ' Demande soumise avec succès',
             `Votre demande d'inscription en tant que ${roleLabel} a été soumise avec succès. Notre équipe l'examinera dans les plus brefs délais.`,
             'demand_submitted',
             {
@@ -2718,20 +2714,52 @@ const notifyDemandSubmitted = async (demande, userId) => {
             }
         );
 
-        // ✅ 2. Notification aux admins
+        //  PUSH À L'UTILISATEUR (AJOUTER CECI !)
+        const [user] = await pool.execute(
+            'SELECT expo_push_token FROM Utilisateur WHERE id_utilisateur = ?',
+            [userId]
+        );
+
+        if (user[0]?.expo_push_token) {
+            const pushResult = await sendPushNotification(
+                user[0].expo_push_token,
+                ' Demande soumise avec succès',
+                `Votre demande d'inscription en tant que ${roleLabel} a été soumise avec succès.`,
+                {
+                    type: 'demand_submitted',
+                    demandeId: demande.id_demande,
+                    role: demande.role,
+                    screen: 'request-details'
+                },
+                userId,
+                'demand_submitted'
+            );
+
+            if (pushResult.success) {
+                console.log(` Push envoyé à l'utilisateur ${userId}`);
+            } else {
+                console.log(` Échec push utilisateur ${userId}:`, pushResult.error);
+            }
+        } else {
+            console.log(` Aucun token push pour l'utilisateur ${userId}`);
+        }
+
+        //  2. NOTIFICATION AUX ADMINS
         const [admins] = await pool.execute(
             `SELECT id_utilisateur, expo_push_token 
              FROM Utilisateur 
-             WHERE role = 'admin' AND est_actif = TRUE
-             AND expo_push_token IS NOT NULL`
+             WHERE role = 'admin' AND est_actif = TRUE`
         );
 
+        console.log(`👥 ${admins.length} admins trouvés`);
+
         for (const admin of admins) {
+            // Sauvegarde BDD pour l'admin
             await saveNotificationToDatabase(
                 admin.id_utilisateur,
-                '🔔 Nouvelle demande d\'inscription',
+                ' Nouvelle demande d\'inscription',
                 `${demande.fullName || 'Un utilisateur'} a soumis une demande d'inscription en tant que ${roleLabel}.`,
-                'demand_submitted_admin',
+                'demand_submitted',
                 {
                     demandeId: demande.id_demande,
                     demandeur: demande.fullName,
@@ -2741,26 +2769,27 @@ const notifyDemandSubmitted = async (demande, userId) => {
                 }
             );
 
+            // Push à l'admin
             if (admin.expo_push_token) {
                 await sendPushNotification(
                     admin.expo_push_token,
-                    '🔔 Nouvelle demande d\'inscription',
+                    ' Nouvelle demande d\'inscription',
                     `${demande.fullName || 'Un utilisateur'} demande à devenir ${roleLabel}.`,
                     {
-                        type: 'demand_submitted_admin',
+                        type: 'demand_submitted',
                         demandeId: demande.id_demande,
                         role: demande.role,
                         screen: 'admin/requests'
                     },
                     admin.id_utilisateur,
-                    'demand_submitted_admin'
+                    'demand_submitted'
                 );
             }
         }
 
         return true;
     } catch (error) {
-        console.error('❌ Erreur notification demande soumise:', error);
+        console.error(' Erreur notification demande soumise:', error);
         return false;
     }
 };
@@ -2775,13 +2804,13 @@ const notifyDemandReview = async (demande, userId) => {
             'owner': 'propriétaire',
             'manager': 'gérant d\'établissement'
         };
-        // ✅ CORRECTION : utiliser role_demande
+        //  CORRECTION : utiliser role_demande
         const roleValue = demande.role_demande || demande.role || 'agent';
         const roleLabel = roleLabels[roleValue] || roleValue;
 
         await saveNotificationToDatabase(
             userId,
-            '🔍 Demande en révision',
+            ' Demande en révision',
             `Votre demande d'inscription en tant que ${roleLabel} est actuellement en cours d'examen par notre équipe.`,
             'demand_review',
             {
@@ -2800,7 +2829,7 @@ const notifyDemandReview = async (demande, userId) => {
         if (user[0]?.expo_push_token) {
             await sendPushNotification(
                 user[0].expo_push_token,
-                '🔍 Demande en révision',
+                ' Demande en révision',
                 `Votre demande d'inscription en tant que ${roleLabel} est en cours d'examen.`,
                 {
                     type: 'demand_review',
@@ -2815,14 +2844,11 @@ const notifyDemandReview = async (demande, userId) => {
 
         return true;
     } catch (error) {
-        console.error('❌ Erreur notification révision:', error);
+        console.error(' Erreur notification révision:', error);
         return false;
     }
 };
 
-/**
- * Notification d'approbation
- */
 const notifyDemandApproved = async (demande, userId) => {
     try {
         const roleLabels = {
@@ -2830,11 +2856,9 @@ const notifyDemandApproved = async (demande, userId) => {
             'owner': 'propriétaire',
             'manager': 'gérant d\'établissement'
         };
-        // ✅ CORRECTION : utiliser role_demande
         const roleValue = demande.role_demande || demande.role || 'agent';
         const roleLabel = roleLabels[roleValue] || roleValue;
-        
-        // Message de succès selon le rôle
+
         const successMessages = {
             'agent': 'Vous pouvez maintenant publier des propriétés et gérer vos clients.',
             'owner': 'Vous pouvez maintenant publier vos biens et gérer vos locations.',
@@ -2842,9 +2866,10 @@ const notifyDemandApproved = async (demande, userId) => {
         };
         const successMessage = successMessages[demande.role] || 'Vous pouvez maintenant utiliser toutes les fonctionnalités.';
 
+        //  Notification à l'utilisateur
         await saveNotificationToDatabase(
             userId,
-            '✅ Félicitations !',
+            ' Félicitations !',
             `Votre demande d'inscription en tant que ${roleLabel} a été approuvée ! ${successMessage}`,
             'demand_approved',
             {
@@ -2855,6 +2880,7 @@ const notifyDemandApproved = async (demande, userId) => {
             }
         );
 
+        //  Push à l'utilisateur
         const [user] = await pool.execute(
             'SELECT expo_push_token FROM Utilisateur WHERE id_utilisateur = ?',
             [userId]
@@ -2863,7 +2889,7 @@ const notifyDemandApproved = async (demande, userId) => {
         if (user[0]?.expo_push_token) {
             await sendPushNotification(
                 user[0].expo_push_token,
-                '✅ Félicitations !',
+                ' Félicitations !',
                 `Votre demande pour devenir ${roleLabel} a été approuvée.`,
                 {
                     type: 'demand_approved',
@@ -2876,9 +2902,37 @@ const notifyDemandApproved = async (demande, userId) => {
             );
         }
 
+        //  Notification aux admins (optionnel)
+        const [admins] = await pool.execute(
+            `SELECT id_utilisateur, expo_push_token 
+             FROM Utilisateur 
+             WHERE role = 'admin' AND est_actif = TRUE`
+        );
+
+        for (const admin of admins) {
+            await saveNotificationToDatabase(
+                admin.id_utilisateur,
+                'Demande approuvée',
+                `La demande de ${demande.fullName} pour devenir ${roleLabel} a été approuvée.`,
+                'demand_approved',
+                { demandeId: demande.id_demande, demandeur: demande.fullName }
+            );
+
+            if (admin.expo_push_token) {
+                await sendPushNotification(
+                    admin.expo_push_token,
+                    'Demande approuvée',
+                    `${demande.fullName} est maintenant ${roleLabel}.`,
+                    { type: 'demand_approved', demandeId: demande.id_demande },
+                    admin.id_utilisateur,
+                    'demand_approved'
+                );
+            }
+        }
+
         return true;
     } catch (error) {
-        console.error('❌ Erreur notification approbation:', error);
+        console.error(' Erreur notification approbation:', error);
         return false;
     }
 };
@@ -2893,13 +2947,13 @@ const notifyDemandRejected = async (demande, userId, raison) => {
             'owner': 'propriétaire',
             'manager': 'gérant d\'établissement'
         };
-        // ✅ CORRECTION : utiliser role_demande
+        //  CORRECTION : utiliser role_demande
         const roleValue = demande.role_demande || demande.role || 'agent';
         const roleLabel = roleLabels[roleValue] || roleValue;
 
         await saveNotificationToDatabase(
             userId,
-            '❌ Demande refusée',
+            ' Demande refusée',
             `Votre demande d'inscription en tant que ${roleLabel} a été refusée. Raison : ${raison || 'Non spécifiée'}. Vous pouvez modifier votre demande et la soumettre à nouveau.`,
             'demand_rejected',
             {
@@ -2918,7 +2972,7 @@ const notifyDemandRejected = async (demande, userId, raison) => {
         if (user[0]?.expo_push_token) {
             await sendPushNotification(
                 user[0].expo_push_token,
-                '❌ Demande refusée',
+                ' Demande refusée',
                 `Votre demande pour devenir ${roleLabel} a été refusée.`,
                 {
                     type: 'demand_rejected',
@@ -2933,7 +2987,7 @@ const notifyDemandRejected = async (demande, userId, raison) => {
 
         return true;
     } catch (error) {
-        console.error('❌ Erreur notification rejet:', error);
+        console.error(' Erreur notification rejet:', error);
         return false;
     }
 };
@@ -2961,13 +3015,13 @@ const notifyPendingDemands = async () => {
             'owner': 'propriétaire',
             'manager': 'gérant d\'établissement'
         };
-        // ✅ CORRECTION : utiliser role_demande
+        // CORRECTION : utiliser role_demande
         const roleValue = demande.role_demande || demande.role || 'agent';
         const roleLabel = roleLabels[roleValue] || roleValue;
 
             await saveNotificationToDatabase(
                 demande.id_utilisateur,
-                '⏳ Suivi de votre demande',
+                'Suivi de votre demande',
                 `Votre demande d'inscription en tant que ${roleLabel} est toujours en cours d'examen. Nous vous tiendrons informé dès qu'une décision sera prise.`,
                 'demand_reminder',
                 {
@@ -2986,7 +3040,7 @@ const notifyPendingDemands = async () => {
 
         return { rappels_envoyes: demandes.length };
     } catch (error) {
-        console.error('❌ Erreur rappel demandes en attente:', error);
+        console.error(' Erreur rappel demandes en attente:', error);
         return { rappels_envoyes: 0 };
     }
 };
@@ -3015,7 +3069,7 @@ const notifyPendingAgentDemands = async () => {
         for (const demande of demandes) {
             await saveNotificationToDatabase(
                 demande.id_utilisateur,
-                '⏳ Suivi de votre demande',
+                'Suivi de votre demande',
                 `Votre demande d'inscription agent est toujours en cours d'examen. Nous vous tiendrons informé dès qu'une décision sera prise.`,
                 'agent_demand_reminder',
                 {
@@ -3034,7 +3088,7 @@ const notifyPendingAgentDemands = async () => {
 
         return { rappels_envoyes: demandes.length };
     } catch (error) {
-        console.error('❌ Erreur rappel demandes en attente:', error);
+        console.error(' Erreur rappel demandes en attente:', error);
         return { rappels_envoyes: 0 };
     }
 };
@@ -3056,7 +3110,7 @@ const saveNotificationToDatabase = async (userId, title, message, type, metadata
     );
     return true;
   } catch (error) {
-    console.error('❌ Erreur sauvegarde notification:', error);
+    console.error(' Erreur sauvegarde notification:', error);
     return false;
   }
 };
@@ -3088,7 +3142,7 @@ const getActiveContracts = async () => {
      AND (c.type_contrat = 'location' OR c.mode_paiement = 'echelonne')`
   );
   
-  console.log(`📊 [NotificationService] ${rows.length} contrats actifs trouvés`);
+  console.log(`[NotificationService] ${rows.length} contrats actifs trouvés`);
   return rows;
 };
 
@@ -3107,7 +3161,7 @@ const genererEcheances = async (contrat) => {
     const { dureeLocation, loyerMensuel, jourPaiement, dateDebut } = details;
     
     if (!dureeLocation || !loyerMensuel || !jourPaiement || !dateDebut) {
-      console.log(`⚠️ Données location incomplètes pour contrat ${contrat.id_contrat}`);
+      console.log(` Données location incomplètes pour contrat ${contrat.id_contrat}`);
       return [];
     }
 
@@ -3131,7 +3185,7 @@ const genererEcheances = async (contrat) => {
     const { dureeVente, mensualites } = details;
     
     if (!dureeVente || !mensualites) {
-      console.log(`⚠️ Données vente incomplètes pour contrat ${contrat.id_contrat}`);
+      console.log(` Données vente incomplètes pour contrat ${contrat.id_contrat}`);
       return [];
     }
 
@@ -3162,7 +3216,7 @@ const genererEcheances = async (contrat) => {
       [JSON.stringify(details), contrat.id_contrat]
     );
     
-    console.log(`✅ ${echeances.length} échéances générées pour contrat ${contrat.id_contrat}`);
+    console.log(` ${echeances.length} échéances générées pour contrat ${contrat.id_contrat}`);
   }
 
   return echeances;
@@ -3200,7 +3254,7 @@ const updateEcheanceStatus = async (idContrat, numeroEcheance, nouveauStatut) =>
       [JSON.stringify(details), idContrat]
     );
   } catch (error) {
-    console.error(`❌ Erreur mise à jour échéance:`, error);
+    console.error(` Erreur mise à jour échéance:`, error);
   }
 };
 
@@ -3213,13 +3267,13 @@ const sendClientReminder = async (contrat, echeance, isLocation) => {
   const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
   const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
 
-  const title = isLocation ? '🔔 Rappel de loyer' : '🔔 Rappel de paiement';
+  const title = isLocation ? ' Rappel de loyer' : ' Rappel de paiement';
   const body = `Bonjour ${contrat.client_nom},\n\n` +
                `Rappel de votre ${isLocation ? 'loyer' : 'échéance'} :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 ${dateEcheance}\n` +
-               `📊 ${isLocation ? `Loyer de ${mois}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
+               ` ${contrat.propriete_titre}\n` +
+               ` ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
+               ` ${dateEcheance}\n` +
+               `${isLocation ? `Loyer de ${mois}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
                `Veuillez effectuer votre paiement.`;
 
   const result = await sendPushNotificationWithRetry(
@@ -3243,13 +3297,13 @@ const sendAgentInfo = async (contrat, echeance, isLocation) => {
   const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
   const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
 
-  const title = '📊 Rappel envoyé au client';
+  const title = 'Rappel envoyé au client';
   const body = `Bonjour ${contrat.agent_nom},\n\n` +
                `Un rappel de ${isLocation ? 'loyer' : 'échéance de vente'} a été envoyé à ${contrat.client_nom} :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 ${dateEcheance}\n` +
-               `📊 ${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}`;
+               ` ${contrat.propriete_titre}\n` +
+               ` ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
+               ` ${dateEcheance}\n` +
+               `${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}`;
 
   const result = await sendPushNotificationWithRetry(
     contrat.agent_token,
@@ -3272,15 +3326,15 @@ const sendLateAlert = async (contrat, echeance, isLocation, joursRetard) => {
   const details = typeof contrat.details_contrat === 'string' ? JSON.parse(contrat.details_contrat) : contrat.details_contrat;
   const total = isLocation ? details.dureeLocation || '?' : details.total_echeances || '?';
 
-  const title = '⚠️ ALERTE - Paiement en retard';
+  const title = ' ALERTE - Paiement en retard';
   const body = `Bonjour ${contrat.agent_nom},\n\n` +
                `Le paiement de ${contrat.client_nom} est en retard :\n\n` +
-               `🏠 ${contrat.propriete_titre}\n` +
-               `💰 ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
-               `📅 Échéance : ${dateEcheance}\n` +
-               `📅 Retard de ${joursRetard} jour(s)\n` +
-               `📊 ${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
-               `⚠️ Veuillez contacter le client.`;
+               ` ${contrat.propriete_titre}\n` +
+               ` ${echeance.montant.toLocaleString('fr-FR')} FCFA\n` +
+               ` Échéance : ${dateEcheance}\n` +
+               ` Retard de ${joursRetard} jour(s)\n` +
+               `${isLocation ? `Loyer n°${echeance.numero}/${total}` : `Échéance ${echeance.numero}/${total}`}\n\n` +
+               ` Veuillez contacter le client.`;
 
   const result = await sendPushNotificationWithRetry(
     contrat.agent_token,
@@ -3309,7 +3363,7 @@ const processContract = async (contrat) => {
 
   const clientNotifEnabled = await userHasNotificationsEnabled(contrat.id_utilisateur);
   if (!clientNotifEnabled) {
-    console.log(`⏭️ Client ${contrat.id_utilisateur} a désactivé les notifications`);
+    console.log(`Client ${contrat.id_utilisateur} a désactivé les notifications`);
     return resultat;
   }
 
@@ -3322,17 +3376,17 @@ const processContract = async (contrat) => {
     echeances = details?.echeances || [];
     
     if (echeances.length === 0) {
-      console.log(`📝 Génération des échéances pour contrat ${contrat.id_contrat}`);
+      console.log(` Génération des échéances pour contrat ${contrat.id_contrat}`);
       echeances = await genererEcheances(contrat);
     }
   } catch (error) {
-    console.error(`❌ Erreur parsing contrat ${contrat.id_contrat}:`, error);
+    console.error(` Erreur parsing contrat ${contrat.id_contrat}:`, error);
     resultat.erreurs++;
     return resultat;
   }
 
   if (echeances.length === 0) {
-    console.log(`ℹ️ Contrat ${contrat.id_contrat} sans échéances`);
+    console.log(` Contrat ${contrat.id_contrat} sans échéances`);
     return resultat;
   }
 
@@ -3350,7 +3404,7 @@ const processContract = async (contrat) => {
 
     // J-3 → Rappel au client
     if (diffJours === 3 && echeance.statut === 'en_attente') {
-      console.log(`🔔 J-3 pour contrat ${contrat.id_contrat}, échéance ${echeance.numero}`);
+      console.log(` J-3 pour contrat ${contrat.id_contrat}, échéance ${echeance.numero}`);
 
       const clientResult = await sendClientReminder(contrat, echeance, isLocation);
       resultat.envoyees += clientResult ? 1 : 0;
@@ -3366,7 +3420,7 @@ const processContract = async (contrat) => {
     // J+1 (dépassé) → Alerte à l'agent
     if (diffJours < 0 && echeance.statut !== 'paye' && echeance.statut !== 'en_retard') {
       const joursRetard = Math.abs(diffJours);
-      console.log(`⚠️ Retard de ${joursRetard} jour(s) pour contrat ${contrat.id_contrat}`);
+      console.log(` Retard de ${joursRetard} jour(s) pour contrat ${contrat.id_contrat}`);
 
       const agentResult = await sendLateAlert(contrat, echeance, isLocation, joursRetard);
       resultat.envoyees += agentResult ? 1 : 0;
@@ -3388,7 +3442,7 @@ const processContract = async (contrat) => {
  * Cette fonction est appelée automatiquement au démarrage du serveur
  */
 const checkAndSendNotifications = async () => {
-  console.log('🔍 [NotificationService] Vérification automatique des contrats...');
+  console.log(' [NotificationService] Vérification automatique des contrats...');
   
   try {
     const contrats = await getActiveContracts();
@@ -3406,16 +3460,16 @@ const checkAndSendNotifications = async () => {
         resultats.erreurs += resultat.erreurs || 0;
         resultats.details.push(resultat);
       } catch (error) {
-        console.error(`❌ Erreur contrat ${contrat.id_contrat}:`, error);
+        console.error(` Erreur contrat ${contrat.id_contrat}:`, error);
         resultats.erreurs++;
       }
     }
 
-    console.log(`✅ [NotificationService] Terminé: ${resultats.notifications_envoyees} notifications envoyées`);
+    console.log(` [NotificationService] Terminé: ${resultats.notifications_envoyees} notifications envoyées`);
     return resultats;
 
   } catch (error) {
-    console.error('❌ [NotificationService] Erreur globale:', error);
+    console.error(' [NotificationService] Erreur globale:', error);
     return { notifications_envoyees: 0, erreurs: 1, details: [] };
   }
 };
